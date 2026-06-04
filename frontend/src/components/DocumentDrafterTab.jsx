@@ -1,23 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { Copy, FileText, Check, Trash2, ArrowRight } from 'lucide-react';
+import {
+  Copy, FileText, Check, Trash2, ArrowRight,
+  ScrollText, Lock, Scale, BookOpen, Hand, ClipboardList,
+  ShoppingCart, Shield, X
+} from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 
 const DOC_TEMPLATES = [
-  { id: 'legal_notice', icon: '📜', title: 'Legal Notice', desc: 'Formal notice sent to respondent before initiating civil litigation.' },
-  { id: 'bail_application', icon: '🔐', title: 'Bail Application', desc: 'Application filed in criminal courts for release under CrPC/BNSS.' },
-  { id: 'plaint', icon: '⚖️', title: 'Civil Plaint', desc: 'Formal statement of claim to initiate a civil suit in court.' },
-  { id: 'written_statement', icon: '📝', title: 'Written Statement', desc: 'Respondent\'s formal written defense in reply to a civil plaint.' },
-  { id: 'affidavit', icon: '🤲', title: 'Affidavit Format', desc: 'A sworn statement verified under oath for judicial submissions.' },
-  { id: 'rti_application', icon: '📋', title: 'RTI Application', desc: 'Formal application to request information under RTI Act 2005.' },
-  { id: 'consumer_complaint', icon: '🛒', title: 'Consumer Forum Complaint', desc: 'Complaint filed in Consumer Commission under CP Act 2019.' },
-  { id: 'stay_application', icon: '🛡', title: 'Stay Application', desc: 'Interim application seeking temporary injunction / stay orders.' }
+  { id: 'legal_notice', Icon: ScrollText, title: 'Legal Notice', desc: 'Formal notice sent to respondent before initiating civil litigation.' },
+  { id: 'bail_application', Icon: Lock, title: 'Bail Application', desc: 'Application filed in criminal courts for release under CrPC/BNSS.' },
+  { id: 'plaint', Icon: Scale, title: 'Civil Plaint', desc: 'Formal statement of claim to initiate a civil suit in court.' },
+  { id: 'written_statement', Icon: BookOpen, title: 'Written Statement', desc: 'Respondent\'s formal written defense in reply to a civil plaint.' },
+  { id: 'affidavit', Icon: Hand, title: 'Affidavit Format', desc: 'A sworn statement verified under oath for judicial submissions.' },
+  { id: 'rti_application', Icon: ClipboardList, title: 'RTI Application', desc: 'Formal application to request information under RTI Act 2005.' },
+  { id: 'consumer_complaint', Icon: ShoppingCart, title: 'Consumer Forum Complaint', desc: 'Complaint filed in Consumer Commission under CP Act 2019.' },
+  { id: 'stay_application', Icon: Shield, title: 'Stay Application', desc: 'Interim application seeking temporary injunction / stay orders.' }
 ];
 
 export default function DocumentDrafterTab({ model, language }) {
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
-  
-  // Form values
+
   const [party1, setParty1] = useState('');
   const [party2, setParty2] = useState('');
   const [caseFacts, setCaseFacts] = useState('');
@@ -27,12 +30,10 @@ export default function DocumentDrafterTab({ model, language }) {
   const [prayers, setPrayers] = useState([]);
   const [newPrayer, setNewPrayer] = useState('');
 
-  // Generation state
   const [isDrafting, setIsDrafting] = useState(false);
   const [draftedText, setDraftedText] = useState('');
   const [copied, setCopied] = useState(false);
 
-  // MongoDB History Archive
   const [savedDrafts, setSavedDrafts] = useState([]);
   const [selectedSavedDraftId, setSelectedSavedDraftId] = useState('');
 
@@ -79,10 +80,7 @@ export default function DocumentDrafterTab({ model, language }) {
       temperature: 0.3,
       document_type: selectedTemplateId,
       case_facts: caseFacts,
-      parties: {
-        "petitioner": party1,
-        "respondent": party2
-      },
+      parties: { petitioner: party1, respondent: party2 },
       court_details: courtDetails || "IN THE COURT OF APPROPRIATE JURISDICTION",
       specific_prayers: prayers.length > 0 ? prayers : undefined,
       advocate_name: advocateName || undefined,
@@ -95,24 +93,18 @@ export default function DocumentDrafterTab({ model, language }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      
+
       if (!res.ok) throw new Error("Drafting failed");
       const data = await res.json();
 
       let resultText = '';
-      if (typeof data === 'string') {
-        resultText = data;
-      } else if (data.response) {
-        resultText = data.response;
-      } else if (data.message?.content) {
-        resultText = data.message.content;
-      } else {
-        resultText = JSON.stringify(data, null, 2);
-      }
+      if (typeof data === 'string') resultText = data;
+      else if (data.response) resultText = data.response;
+      else if (data.message?.content) resultText = data.message.content;
+      else resultText = JSON.stringify(data, null, 2);
 
       setDraftedText(resultText);
 
-      // Save document to MongoDB archive
       const docTitle = `Draft: ${template.title} (${party1.split(',')[0]} vs ${party2.split(',')[0]})`;
       await fetch(`${API_BASE}/documents`, {
         method: 'POST',
@@ -120,16 +112,12 @@ export default function DocumentDrafterTab({ model, language }) {
         body: JSON.stringify({
           title: docTitle,
           document_type: selectedTemplateId,
-          parties: {
-            "petitioner": party1,
-            "respondent": party2
-          },
+          parties: { petitioner: party1, respondent: party2 },
           court_details: courtDetails,
           draft_text: resultText
         })
       });
       fetchSavedDrafts();
-
     } catch (err) {
       console.error(err);
       alert("Failed to draft document. Verify connection to backend.");
@@ -141,11 +129,7 @@ export default function DocumentDrafterTab({ model, language }) {
   const handleSavedDraftSelect = async (e) => {
     const id = e.target.value;
     setSelectedSavedDraftId(id);
-    if (!id) {
-      setDraftedText('');
-      return;
-    }
-
+    if (!id) { setDraftedText(''); return; }
     try {
       const res = await fetch(`${API_BASE}/documents/${id}`);
       if (res.ok) {
@@ -190,16 +174,14 @@ export default function DocumentDrafterTab({ model, language }) {
       <div className="tab-panel-header print-hide">
         <h2>Document Drafting Assistant</h2>
         <p>Draft complete, legally sound, court-ready Indian legal documents. Select a template to begin.</p>
-        
+
         {savedDrafts.length > 0 && (
           <div className="saved-cases-archive font-mono">
             <span>Saved Drafts:</span>
             <select value={selectedSavedDraftId} onChange={handleSavedDraftSelect}>
               <option value="">-- Load Saved Draft --</option>
               {savedDrafts.map(d => (
-                <option key={d.id} value={d.id}>
-                  {d.title}
-                </option>
+                <option key={d.id} value={d.id}>{d.title}</option>
               ))}
             </select>
             {selectedSavedDraftId && (
@@ -214,20 +196,21 @@ export default function DocumentDrafterTab({ model, language }) {
       {/* Templates Grid Selection */}
       {!selectedTemplateId && (
         <div className="doc-templates-selection-grid animate-fade-in print-hide">
-          {DOC_TEMPLATES.map(t => (
-            <div 
-              key={t.id} 
-              className="doc-template-card"
-              onClick={() => setSelectedTemplateId(t.id)}
-            >
-              <div className="dt-icon">{t.icon}</div>
-              <h4>{t.title}</h4>
-              <p>{t.desc}</p>
-              <button className="template-select-link font-mono text-xs">
-                Select Template <ArrowRight size={10} style={{ marginLeft: 4 }} />
-              </button>
-            </div>
-          ))}
+          {DOC_TEMPLATES.map(t => {
+            const { Icon } = t;
+            return (
+              <div key={t.id} className="doc-template-card" onClick={() => setSelectedTemplateId(t.id)}>
+                <div className="dt-icon">
+                  <Icon size={24} strokeWidth={1.5} />
+                </div>
+                <h4>{t.title}</h4>
+                <p>{t.desc}</p>
+                <button className="template-select-link font-mono text-xs">
+                  Select Template <ArrowRight size={10} style={{ marginLeft: 4 }} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -237,57 +220,60 @@ export default function DocumentDrafterTab({ model, language }) {
           {/* Form Left */}
           <div className="analyzer-form-panel print-hide">
             <div className="form-navigation-row mb-3">
-              <button className="btn-secondary text-xs" onClick={() => { setSelectedTemplateId(null); setDraftedText(''); setSelectedSavedDraftId(''); }}>
+              <button
+                className="btn-secondary text-xs"
+                onClick={() => { setSelectedTemplateId(null); setDraftedText(''); setSelectedSavedDraftId(''); }}
+              >
                 ← Back to Templates
               </button>
             </div>
 
             <div className="section-group-card">
-              <h3>✍️ Custom Draft Parameters</h3>
-              
+              <h3>Custom Draft Parameters</h3>
+
               <div className="form-group">
                 <label>Petitioner / First Party (Full Details)</label>
-                <input 
-                  type="text" 
-                  value={party1} 
-                  onChange={e => setParty1(e.target.value)} 
+                <input
+                  type="text"
+                  value={party1}
+                  onChange={e => setParty1(e.target.value)}
                   placeholder="e.g. Ramesh Kumar S/o Suresh Kumar, Age 42, R/o G-12 Saket, Delhi"
                 />
               </div>
 
               <div className="form-group">
                 <label>Respondent / Second Party (Full Details)</label>
-                <input 
-                  type="text" 
-                  value={party2} 
-                  onChange={e => setParty2(e.target.value)} 
+                <input
+                  type="text"
+                  value={party2}
+                  onChange={e => setParty2(e.target.value)}
                   placeholder="e.g. State of NCT Delhi or ICICI Bank Ltd, Connaught Place Branch"
                 />
               </div>
 
               <div className="form-group">
-                <label>Court Name / Location (e.g. In High Court of Delhi)</label>
-                <input 
-                  type="text" 
-                  value={courtDetails} 
-                  onChange={e => setCourtDetails(e.target.value)} 
+                <label>Court Name / Location</label>
+                <input
+                  type="text"
+                  value={courtDetails}
+                  onChange={e => setCourtDetails(e.target.value)}
                   placeholder="e.g. District & Sessions Court, Saket, New Delhi"
                 />
               </div>
 
               <div className="form-group">
                 <label>Case Narrative / Material Facts for Document</label>
-                <textarea 
+                <textarea
                   rows={6}
-                  value={caseFacts} 
-                  onChange={e => setCaseFacts(e.target.value)} 
+                  value={caseFacts}
+                  onChange={e => setCaseFacts(e.target.value)}
                   placeholder="Write details of the claim. Dates of cause of action, details of transaction, violation details..."
                 />
               </div>
             </div>
 
             <div className="section-group-card">
-              <h3>👨‍⚖️ Advocate Credentials (Optional)</h3>
+              <h3>Advocate Credentials (Optional)</h3>
               <div className="form-row">
                 <div className="form-group flex-1">
                   <label>Advocate Name</label>
@@ -301,12 +287,12 @@ export default function DocumentDrafterTab({ model, language }) {
             </div>
 
             <div className="section-group-card">
-              <h3>📜 Specific Prayers / Reliefs requested</h3>
+              <h3>Specific Prayers / Reliefs Requested</h3>
               <div className="list-adder-input">
-                <input 
-                  type="text" 
-                  value={newPrayer} 
-                  onChange={e => setNewPrayer(e.target.value)} 
+                <input
+                  type="text"
+                  value={newPrayer}
+                  onChange={e => setNewPrayer(e.target.value)}
                   placeholder="e.g. Direct respondent to return Rs. 5 Lakhs with interest"
                   onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddPrayer())}
                 />
@@ -316,27 +302,30 @@ export default function DocumentDrafterTab({ model, language }) {
                 <div className="chips-container mt-2">
                   {prayers.map((pr, i) => (
                     <span key={i} className="chip">
-                      {pr.slice(0, 30)}... <X size={10} className="chip-remove" onClick={() => handleRemovePrayer(i)} />
+                      {pr.slice(0, 30)}...
+                      <X size={10} className="chip-remove" onClick={() => handleRemovePrayer(i)} />
                     </span>
                   ))}
                 </div>
               )}
             </div>
 
-            <button 
+            <button
               className="btn-primary w-full py-3 text-sm font-semibold uppercase tracking-wider mt-3"
               onClick={handleDraftDocument}
               disabled={isDrafting}
             >
-              {isDrafting ? "Drafting Document..." : "✍️ Generate Court-Ready Draft"}
+              {isDrafting ? "Drafting Document..." : "Generate Court-Ready Draft"}
             </button>
           </div>
 
-          {/* Document scroll Right */}
+          {/* Document Preview Right */}
           <div className="analyzer-output-panel">
             {isDrafting ? (
               <div className="analysis-progress-card">
-                <div className="welcome-ashoka animate-pulse">📄</div>
+                <div className="welcome-ashoka animate-pulse">
+                  <FileText size={40} strokeWidth={1.5} />
+                </div>
                 <h3>Drafting Document</h3>
                 <p>Generating court-ready legal structure in standard cause title format, inserting recitals, factual paragraphs, verification details, and prayer clauses...</p>
               </div>
@@ -355,7 +344,6 @@ export default function DocumentDrafterTab({ model, language }) {
                     <span>{copied ? 'Copied!' : 'Copy Draft'}</span>
                   </button>
                 </div>
-
                 <div className="legal-paper-scroll">
                   <pre className="legal-doc-text font-mono text-xs">{draftedText}</pre>
                 </div>
@@ -365,27 +353,5 @@ export default function DocumentDrafterTab({ model, language }) {
         </div>
       )}
     </div>
-  );
-}
-
-// Inline X component helper
-function X({ size, className, onClick }) {
-  return (
-    <svg 
-      xmlns="http://www.w3.org/2000/svg" 
-      width={size} 
-      height={size} 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round" 
-      className={className}
-      onClick={onClick}
-    >
-      <line x1="18" y1="6" x2="6" y2="18"></line>
-      <line x1="6" y1="6" x2="18" y2="18"></line>
-    </svg>
   );
 }

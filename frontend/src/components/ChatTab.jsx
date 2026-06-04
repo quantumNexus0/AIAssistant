@@ -1,47 +1,54 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Trash2, Download, Scale, ArrowRight, User } from 'lucide-react';
+import { Trash2, Download, Scale, ArrowRight, User, Shield, Scroll, Users, Home, HardHat, Briefcase, Cpu } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 
 const CHAT_MODES = [
-  { id: 'general', name: 'General', icon: '⚖️' },
-  { id: 'criminal', name: 'Criminal', icon: '🔐' },
-  { id: 'civil', name: 'Civil', icon: '📜' },
-  { id: 'family', name: 'Family', icon: '👨‍👩‍👧' },
-  { id: 'property', name: 'Property', icon: '🏘' },
-  { id: 'labour', name: 'Labour', icon: '👷' },
-  { id: 'tax', name: 'Tax', icon: '💼' },
-  { id: 'cyber', name: 'Cyber', icon: '💻' }
+  { id: 'general', name: 'General', icon: Scale },
+  { id: 'criminal', name: 'Criminal', icon: Shield },
+  { id: 'civil', name: 'Civil', icon: Scroll },
+  { id: 'family', name: 'Family', icon: Users },
+  { id: 'property', name: 'Property', icon: Home },
+  { id: 'labour', name: 'Labour', icon: HardHat },
+  { id: 'tax', name: 'Tax', icon: Briefcase },
+  { id: 'cyber', name: 'Cyber', icon: Cpu }
 ];
 
-const SUGGESTED_TOPICS = [
-  "What are my fundamental rights under the Indian Constitution?",
-  "Explain the RTI Act and how to file a complaint",
-  "What should I do if I am wrongfully arrested in India?",
-  "Explain divorce laws in India under Hindu Marriage Act",
-  "What is the process to file a consumer complaint in India?",
-  "Explain cybercrime laws in India under IT Act 2000",
-  "What are tenant rights in India?",
-  "How to register an FIR and what are my rights?",
-  "What are women rights and protection laws in India?"
-];
+// const SUGGESTED_TOPICS = [
+//   "What are my fundamental rights under the Indian Constitution?",
+//   "Explain the RTI Act and how to file a complaint",
+//   "What should I do if I am wrongfully arrested in India?",
+//   "Explain divorce laws in India under Hindu Marriage Act",
+//   "What is the process to file a consumer complaint in India?",
+//   "Explain cybercrime laws in India under IT Act 2000",
+//   "What are tenant rights in India?",
+//   "How to register an FIR and what are my rights?",
+//   "What are women rights and protection laws in India?"
+// ];
 
-export default function ChatTab({ 
-  currentChatId, 
-  setCurrentChatId, 
-  model, 
+export default function ChatTab({
+  currentChatId,
+  setCurrentChatId,
+  model,
+  setModel,
   language,
   setLanguage,
   prepopulatedPrompt,
   onClearPrepopulatedPrompt
 }) {
+  const getShortModelName = (name) => {
+    if (!name) return '';
+    return name.split(':')[0].split('/').pop();
+  };
+  const [availableModels, setAvailableModels] = useState([]);
+  const [ollamaStatus, setOllamaStatus] = useState('checking');
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [chatMode, setChatMode] = useState('general');
   const [isGenerating, setIsGenerating] = useState(false);
   const [sessionTitle, setSessionTitle] = useState('New Consultation');
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
-  
+
   const chatEndRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -67,6 +74,30 @@ export default function ChatTab({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isGenerating]);
+
+  // Fetch Ollama health & models for compact selector
+  useEffect(() => {
+    let mounted = true;
+    const fetchHealth = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/ai/health`);
+        if (!mounted) return;
+        if (res.ok) {
+          const data = await res.json();
+          setOllamaStatus(data.status === 'connected' ? 'connected' : 'disconnected');
+          if (data.available_models) setAvailableModels(data.available_models);
+        } else {
+          setOllamaStatus('disconnected');
+        }
+      } catch (e) {
+        if (!mounted) return;
+        setOllamaStatus('disconnected');
+      }
+    };
+    fetchHealth();
+    const iv = setInterval(fetchHealth, 15000);
+    return () => { mounted = false; clearInterval(iv); };
+  }, []);
 
   const loadChatHistory = async (id) => {
     try {
@@ -107,7 +138,7 @@ export default function ChatTab({
       marathi: 'मराठी', tamil: 'தமிழ்', gujarati: 'ગુજરાતી', kannada: 'ಕನ್ನಡ',
       malayalam: 'മലയാളം', punjabi: 'ਪੰਜਾਬੀ', urdu: 'اردو'
     };
-    
+
     const langInstr = lang !== 'english'
       ? `CRITICAL: You MUST respond entirely in ${langNames[lang] || 'English'} language. Do not use English unless the user writes in English.`
       : 'Respond in clear English.';
@@ -226,16 +257,16 @@ Format your response with clear sections using **bold headers**, bullet points, 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
+
         const chunk = decoder.decode(value, { stream: true });
-        
+
         // Parse NDJSON chunks
         const lines = chunk.split('\n');
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
             const parsed = JSON.parse(line);
-            
+
             // Check for errors
             if (parsed.error) {
               accumulatedResponse += `\n[Error: ${parsed.message || parsed.error}]`;
@@ -245,7 +276,7 @@ Format your response with clear sections using **bold headers**, bullet points, 
             // Extract message content from Ollama response structure
             const token = parsed.message?.content || parsed.response || "";
             accumulatedResponse += token;
-            
+
             // Update UI state
             setMessages(prev => {
               const updated = [...prev];
@@ -273,7 +304,7 @@ Format your response with clear sections using **bold headers**, bullet points, 
           content: accumulatedResponse
         })
       });
-      
+
       // Notify parent to fetch new titles / reload history (we can force a custom event or let it poll)
       window.dispatchEvent(new Event('chat_history_changed'));
 
@@ -299,7 +330,7 @@ Format your response with clear sections using **bold headers**, bullet points, 
       return;
     }
     if (!confirm("Are you sure you want to clear this conversation?")) return;
-    
+
     // We can delete and create a new chat, or just delete session
     try {
       await fetch(`${API_BASE}/chats/${currentChatId}`, { method: 'DELETE' });
@@ -345,7 +376,7 @@ Format your response with clear sections using **bold headers**, bullet points, 
 
     lines.forEach(line => {
       const trimmed = line.trim();
-      
+
       // Handle unordered lists
       if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ')) {
         if (inOl) {
@@ -417,7 +448,19 @@ Format your response with clear sections using **bold headers**, bullet points, 
       <div className="chat-header">
         <div className="chat-header-info">
           <h3>{sessionTitle}</h3>
-          <p className="font-mono text-xs">Model: {model} · Lang: {language}</p>
+          <div className="chat-header-model-wrapper">
+            <select
+              value={model}
+              onChange={e => setModel(e.target.value)}
+              disabled={ollamaStatus === 'disconnected'}
+              className="model-dropdown-compact chat-header-model"
+              aria-label="Select model"
+            >
+              {availableModels.map(m => (
+                <option key={m} value={m}>{getShortModelName(m)}</option>
+              ))}
+            </select>
+          </div>
         </div>
         <div className="chat-header-actions">
           {messages.length > 0 && (
@@ -493,7 +536,7 @@ Format your response with clear sections using **bold headers**, bullet points, 
         <div className="chat-input-box">
           {/* Category Trigger & Dropdown Menu */}
           <div className="category-menu-wrapper">
-            <button 
+            <button
               className="category-trigger-btn"
               onClick={() => setShowCategoryMenu(!showCategoryMenu)}
               type="button"
@@ -513,7 +556,7 @@ Format your response with clear sections using **bold headers**, bullet points, 
                     className={`category-menu-item ${chatMode === mode.id ? 'active' : ''}`}
                     type="button"
                   >
-                    <span className="menu-icon">{mode.icon}</span>
+                    <span className="menu-icon"><mode.icon size={16} /></span>
                     <span className="menu-name">{mode.name}</span>
                   </button>
                 ))}
@@ -531,20 +574,20 @@ Format your response with clear sections using **bold headers**, bullet points, 
             disabled={isGenerating}
           />
 
-          <button 
-            className="send-message-btn" 
-            onClick={() => handleSend()} 
+          <button
+            className="send-message-btn"
+            onClick={() => handleSend()}
             disabled={!inputValue.trim() || isGenerating}
           >
-            <Send size={14} />
+            <ArrowRight size={16} />
           </button>
         </div>
 
         <div className="input-bottom-bar">
           <label htmlFor="language-select" className="input-language-label">Language: </label>
-          <select 
+          <select
             id="language-select"
-            value={language} 
+            value={language}
             onChange={e => setLanguage(e.target.value)}
             className="input-language-selector-outside"
           >

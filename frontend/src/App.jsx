@@ -42,6 +42,7 @@ export default function App() {
           currentChatId={currentChatId}
           setCurrentChatId={setCurrentChatId}
           model={model}
+          setModel={setModel}
           language={language}
           setLanguage={setLanguage}
           prepopulatedPrompt={prepopulatedPrompt}
@@ -58,9 +59,9 @@ export default function App() {
         <DocumentDrafterTab model={model} language={language} />
       )}
       {activeTab === 'tools' && (
-        <LegalToolsTab 
-          onLearnAboutReference={handleLearnAboutReference} 
-          model={model} 
+        <LegalToolsTab
+          onLearnAboutReference={handleLearnAboutReference}
+          model={model}
         />
       )}
     </Layout>
