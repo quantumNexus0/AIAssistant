@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
 from datetime import datetime
 from bson import ObjectId
 from ..database import get_db
@@ -13,6 +13,7 @@ class DocumentSaveRequest(BaseModel):
     parties: Dict[str, str]
     court_details: Optional[str] = None
     draft_text: str
+    attachments: Optional[List[Dict[str, Any]]] = None
 
 def serialize_doc(doc) -> dict:
     if not doc:
@@ -39,6 +40,7 @@ async def save_document(payload: DocumentSaveRequest):
         "parties": payload.parties,
         "court_details": payload.court_details,
         "draft_text": payload.draft_text,
+        "attachments": payload.attachments or [],
         "created_at": datetime.utcnow().isoformat()
     }
     result = await db.documents.insert_one(new_doc)

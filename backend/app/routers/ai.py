@@ -39,6 +39,12 @@ class OllamaGenerateRequest(BaseModel):
     prompt: str
     stream: bool = False
 
+class UploadedDocument(BaseModel):
+    filename: str
+    content_type: Optional[str] = None
+    size: int
+    content_base64: str
+
 class CaseAnalysisRequest(BaseModel):
     model: str = Field(default="llama3.2", description="Ollama model name")
     temperature: Optional[float] = Field(default=0.4, description="Lower = more deterministic legal output")
@@ -52,6 +58,7 @@ class CaseAnalysisRequest(BaseModel):
     previous_decisions: Optional[List[PreviousDecision]] = None
     available_evidence: Optional[List[str]] = None
     key_witnesses: Optional[List[str]] = None
+    attached_documents: Optional[List[UploadedDocument]] = None
     missing_documents: Optional[List[str]] = None
     reliefs_sought: Optional[List[str]] = None
     urgency_level: Optional[str] = "normal"
@@ -69,6 +76,7 @@ class DocumentDraftRequest(BaseModel):
     parties: Dict[str, str]
     court_details: str
     specific_prayers: Optional[List[str]] = None
+    supporting_documents: Optional[List[UploadedDocument]] = None
     previous_decisions: Optional[List[PreviousDecision]] = None
     advocate_name: Optional[str] = None
     bar_council_number: Optional[str] = None
@@ -558,6 +566,14 @@ def build_analysis_user_message(req: CaseAnalysisRequest) -> str:
         lines += ["", "KEY WITNESSES:"]
         lines += [f"  • {w}" for w in req.key_witnesses]
 
+    if req.attached_documents:
+        lines += ["", "ATTACHED SUPPORTING DOCUMENTS:"]
+        for doc in req.attached_documents:
+            lines += [
+                f"  • {doc.filename} ({doc.content_type or 'unknown type'}, {doc.size} bytes)",
+                f"    Note: document content is attached in the case record and should be considered by the counsel."
+            ]
+
     if req.missing_documents:
         lines += ["", "MISSING DOCUMENTS (not yet obtained):"]
         lines += [f"  • {d}" for d in req.missing_documents]
@@ -622,6 +638,14 @@ def build_draft_user_message(req: DocumentDraftRequest) -> str:
         lines += ["", "SPECIFIC PRAYERS TO INCLUDE:"]
         for p in req.specific_prayers:
             lines.append(f"  (a) {p}")
+
+    if req.supporting_documents:
+        lines += ["", "SUPPORTING DOCUMENTS ATTACHED FOR REFERENCE:"]
+        for doc in req.supporting_documents:
+            lines += [
+                f"  • {doc.filename} ({doc.content_type or 'unknown type'}, {doc.size} bytes)",
+                f"    Note: use attached material as supporting evidence in drafting."
+            ]
 
     if req.previous_decisions:
         lines += ["", "PREVIOUS COURT PROCEEDINGS:"]

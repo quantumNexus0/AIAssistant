@@ -1,19 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Plus, 
-  Trash2, 
-  ChevronRight, 
-  AlertTriangle, 
-  Calendar, 
-  FileText, 
-  Award, 
-  Map, 
-  Bookmark, 
-  TrendingUp, 
-  Printer, 
-  Clock, 
+import {
+  Plus,
+  Trash2,
+  ChevronRight,
+  AlertTriangle,
+  Calendar,
+  FileText,
+  Award,
+  Map,
+  Bookmark,
+  TrendingUp,
+  Printer,
+  Clock,
   BookmarkCheck,
-  ChevronDown
+  ChevronDown,
+  X
 } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000/api/v1';
@@ -27,7 +28,7 @@ export default function CaseAnalyzerTab({ model, language }) {
   const [targetCourt, setTargetCourt] = useState('District Court');
   const [petitionerDetails, setPetitionerDetails] = useState('');
   const [respondentDetails, setRespondentDetails] = useState('');
-  
+
   // Previous decisions
   const [previousDecisions, setPreviousDecisions] = useState([]);
   const [newDecCourt, setNewDecCourt] = useState('');
@@ -45,6 +46,8 @@ export default function CaseAnalyzerTab({ model, language }) {
   const [newWitness, setNewWitness] = useState('');
   const [reliefsList, setReliefsList] = useState([]);
   const [newRelief, setNewRelief] = useState('');
+  const [caseFiles, setCaseFiles] = useState([]);
+  const [fileUploadError, setFileUploadError] = useState('');
 
   // Additional options
   const [urgencyLevel, setUrgencyLevel] = useState('normal');
@@ -56,8 +59,10 @@ export default function CaseAnalyzerTab({ model, language }) {
   // Report state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [analysisError, setAnalysisError] = useState('');
+  const [analysisRawOutput, setAnalysisRawOutput] = useState('');
   const [activeReportTab, setActiveReportTab] = useState('summary');
-  
+
   // Past reports archive (MongoDB)
   const [savedCases, setSavedCases] = useState([]);
   const [selectedSavedCaseId, setSelectedSavedCaseId] = useState('');
@@ -127,6 +132,71 @@ export default function CaseAnalyzerTab({ model, language }) {
     }
   };
 
+  const parseOllamaResponse = (data) => {
+    if (typeof data === 'object' && !data.response && !data.message?.content) {
+      return { parsed: data, raw: JSON.stringify(data, null, 2) };
+    }
+
+    let raw = '';
+    if (typeof data === 'string') {
+      raw = data.trim();
+    } else if (data.response) {
+      raw = data.response;
+    } else if (data.message?.content) {
+      raw = data.message.content;
+    } else {
+      raw = JSON.stringify(data, null, 2);
+    }
+
+    let cleaned = raw;
+    if (cleaned.startsWith('```json')) cleaned = cleaned.substring(7);
+    if (cleaned.startsWith('```')) cleaned = cleaned.substring(3);
+    if (cleaned.endsWith('```')) cleaned = cleaned.substring(0, cleaned.length - 3);
+    cleaned = cleaned.trim();
+
+    try {
+      const parsed = JSON.parse(cleaned);
+      return { parsed, raw };
+    } catch (err) {
+      return { parsed: null, raw };
+    }
+  };
+
+  const readFileAsBase64 = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const base64 = dataUrl.split(',')[1] || '';
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error('File read failed'));
+    reader.readAsDataURL(file);
+  });
+
+  const handleCaseFilesChange = async (event) => {
+    setFileUploadError('');
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+    try {
+      const attachments = await Promise.all(files.map(async (file) => ({
+        filename: file.name,
+        content_type: file.type || 'application/octet-stream',
+        size: file.size,
+        content_base64: await readFileAsBase64(file),
+      })));
+      setCaseFiles(prev => [...prev, ...attachments]);
+    } catch (err) {
+      console.error('File upload error', err);
+      setFileUploadError('Unable to read one or more files. Please try again.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleRemoveCaseFile = (index) => {
+    setCaseFiles(caseFiles.filter((_, idx) => idx !== index));
+  };
+
   // Run deep analysis via FastAPI
   const handleAnalyze = async () => {
     if (!caseDescription.trim()) {
@@ -136,6 +206,8 @@ export default function CaseAnalyzerTab({ model, language }) {
 
     setIsAnalyzing(true);
     setAnalysisResult(null);
+    setAnalysisError('');
+    setAnalysisRawOutput('');
 
     const payload = {
       model,
@@ -150,6 +222,7 @@ export default function CaseAnalyzerTab({ model, language }) {
       previous_decisions: previousDecisions.length > 0 ? previousDecisions : undefined,
       available_evidence: evidenceList.length > 0 ? evidenceList : undefined,
       key_witnesses: witnessesList.length > 0 ? witnessesList : undefined,
+      attached_documents: caseFiles.length > 0 ? caseFiles : undefined,
       reliefs_sought: reliefsList.length > 0 ? reliefsList : undefined,
       urgency_level: urgencyLevel,
       case_stage: caseStage || undefined,
@@ -165,35 +238,28 @@ export default function CaseAnalyzerTab({ model, language }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error("Analysis failed");
-      const data = await res.json();
-      
-      // The FastAPI endpoint returns a raw or json structure. Ollama model might prefix with markdown.
-      // Let's parse if it's text or render directly if it's already a clean object.
-      let finalResult = data;
-      if (typeof data === 'string') {
-        // Strip markdown backticks if model generated it
-        let cleaned = data.trim();
-        if (cleaned.startsWith("```json")) cleaned = cleaned.substring(7);
-        if (cleaned.startsWith("```")) cleaned = cleaned.substring(3);
-        if (cleaned.endsWith("```")) cleaned = cleaned.substring(0, cleaned.length - 3);
-        finalResult = JSON.parse(cleaned.trim());
-      } else if (data.response) {
-        // Ollama raw object format
-        let content = data.response;
-        if (content.startsWith("```json")) content = content.substring(7);
-        if (content.endsWith("```")) content = content.substring(0, content.length - 3);
-        finalResult = JSON.parse(content.trim());
-      } else if (data.message?.content) {
-        // Chat format
-        let content = data.message.content;
-        if (content.startsWith("```json")) {
-          content = content.replace(/^```json/, "").replace(/```$/, "");
+      if (!res.ok) {
+        let errorText;
+        try {
+          const errJson = await res.json();
+          errorText = errJson.detail || errJson.message || JSON.stringify(errJson, null, 2);
+        } catch (parseErr) {
+          errorText = await res.text();
         }
-        finalResult = JSON.parse(content.trim());
+        setAnalysisError(`AI server returned ${res.status}: ${errorText}`);
+        setAnalysisRawOutput(errorText);
+        return;
       }
-      
-      setAnalysisResult(finalResult);
+
+      const data = await res.json();
+      const { parsed, raw } = parseOllamaResponse(data);
+      if (!parsed) {
+        setAnalysisError('Unable to parse AI response into structured JSON. Raw response shown below.');
+        setAnalysisRawOutput(raw);
+        return;
+      }
+
+      setAnalysisResult(parsed);
 
       // Auto-save this report to MongoDB cases archive
       const title = `Analysis of ${caseType.toUpperCase()} - ${new Date().toLocaleDateString('en-IN')}`;
@@ -212,7 +278,8 @@ export default function CaseAnalyzerTab({ model, language }) {
 
     } catch (err) {
       console.error(err);
-      alert("Failed to analyze case. Verify that your Ollama model produces structured JSON and is running.");
+      setAnalysisError('Failed to analyze case. Check the model server and raw output.');
+      setAnalysisRawOutput(err.message || String(err));
     } finally {
       setIsAnalyzing(false);
     }
@@ -225,14 +292,14 @@ export default function CaseAnalyzerTab({ model, language }) {
       setAnalysisResult(null);
       return;
     }
-    
+
     // Load from MongoDB
     try {
       const res = await fetch(`${API_BASE}/cases/${id}`);
       if (res.ok) {
         const data = await res.json();
         setAnalysisResult(data.analysis_result);
-        
+
         // Repopulate form
         const req = data.request_data;
         setCaseType(req.case_type || 'criminal');
@@ -240,10 +307,18 @@ export default function CaseAnalyzerTab({ model, language }) {
         setClientSide(req.client_side || 'petitioner');
         setJurisdictionState(req.jurisdiction_state || '');
         setTargetCourt(req.target_court || '');
+        setPetitionerDetails(req.petitioner_details || '');
+        setRespondentDetails(req.respondent_details || '');
         setPreviousDecisions(req.previous_decisions || []);
         setEvidenceList(req.available_evidence || []);
         setWitnessesList(req.key_witnesses || []);
         setReliefsList(req.reliefs_sought || []);
+        setCaseFiles(req.attached_documents || []);
+        setUrgencyLevel(req.urgency_level || 'normal');
+        setCaseStage(req.case_stage || 'pre-filing');
+        setFinancialStakes(req.financial_stakes || '');
+        setSpecialCircumstances(req.special_circumstances || '');
+        setOpposingArguments(req.opposing_arguments || '');
       }
     } catch (err) {
       console.error(err);
@@ -275,7 +350,7 @@ export default function CaseAnalyzerTab({ model, language }) {
       <div className="tab-panel-header print-hide">
         <h2>AI Case Analyzer</h2>
         <p>Input comprehensive facts of your matter to receive senior advocate-level structured legal intelligence.</p>
-        
+
         {/* Saved archive selection */}
         {savedCases.length > 0 && (
           <div className="saved-cases-archive font-mono">
@@ -302,7 +377,7 @@ export default function CaseAnalyzerTab({ model, language }) {
         <div className="analyzer-form-panel print-hide">
           <div className="section-group-card">
             <h3>📋 Basic Case Facts</h3>
-            
+
             <div className="form-row">
               <div className="form-group flex-1">
                 <label>Case Classification</label>
@@ -334,19 +409,19 @@ export default function CaseAnalyzerTab({ model, language }) {
             <div className="form-row">
               <div className="form-group flex-1">
                 <label>Jurisdiction (State/UT)</label>
-                <input 
-                  type="text" 
-                  value={jurisdictionState} 
-                  onChange={e => setJurisdictionState(e.target.value)} 
+                <input
+                  type="text"
+                  value={jurisdictionState}
+                  onChange={e => setJurisdictionState(e.target.value)}
                   placeholder="e.g. Maharashtra, Delhi"
                 />
               </div>
               <div className="form-group flex-1">
                 <label>Target Forum/Court</label>
-                <input 
-                  type="text" 
-                  value={targetCourt} 
-                  onChange={e => setTargetCourt(e.target.value)} 
+                <input
+                  type="text"
+                  value={targetCourt}
+                  onChange={e => setTargetCourt(e.target.value)}
                   placeholder="e.g. High Court, DRT, NCLT"
                 />
               </div>
@@ -354,9 +429,9 @@ export default function CaseAnalyzerTab({ model, language }) {
 
             <div className="form-group">
               <label>Full Case Narrative Facts</label>
-              <textarea 
+              <textarea
                 rows={5}
-                value={caseDescription} 
+                value={caseDescription}
                 onChange={e => setCaseDescription(e.target.value)}
                 placeholder="Detail what happened, key events, disputes, parties, dates, and what outcome you need. Be as comprehensive as possible..."
               />
@@ -367,19 +442,19 @@ export default function CaseAnalyzerTab({ model, language }) {
             <h3>👥 Parties Details (Optional)</h3>
             <div className="form-group">
               <label>Petitioner details</label>
-              <input 
-                type="text" 
-                value={petitionerDetails} 
-                onChange={e => setPetitionerDetails(e.target.value)} 
+              <input
+                type="text"
+                value={petitionerDetails}
+                onChange={e => setPetitionerDetails(e.target.value)}
                 placeholder="Name, Age, Address, Occupation"
               />
             </div>
             <div className="form-group">
               <label>Respondent details</label>
-              <input 
-                type="text" 
-                value={respondentDetails} 
-                onChange={e => setRespondentDetails(e.target.value)} 
+              <input
+                type="text"
+                value={respondentDetails}
+                onChange={e => setRespondentDetails(e.target.value)}
                 placeholder="Name, Age, Address, Occupation"
               />
             </div>
@@ -389,8 +464,8 @@ export default function CaseAnalyzerTab({ model, language }) {
           <div className="section-group-card">
             <div className="card-header-with-action">
               <h3>⚖️ Litigation Proceedings / Orders History</h3>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="btn-link"
                 onClick={() => setShowAddDecisionForm(!showAddDecisionForm)}
               >
@@ -459,18 +534,18 @@ export default function CaseAnalyzerTab({ model, language }) {
           {/* Evidence, Witnesses & Relief Lists */}
           <div className="section-group-card">
             <h3>📑 Materials & Claims</h3>
-            
+
             <div className="form-group">
               <label>Evidence in Hand</label>
               <div className="list-adder-input">
-                <input 
-                  type="text" 
-                  value={newEvidence} 
+                <input
+                  type="text"
+                  value={newEvidence}
                   onChange={e => setNewEvidence(e.target.value)}
                   placeholder="e.g. FIR copy, Bank Statement, Email log"
                   onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddEvidence())}
                 />
-                <button type="button" onClick={handleAddEvidence}><Plus size={14} /></button>
+                <button type="button" onClick={handleAddEvidence} aria-label="Add evidence"><Plus size={14} /></button>
               </div>
               {evidenceList.length > 0 && (
                 <div className="chips-container">
@@ -484,11 +559,33 @@ export default function CaseAnalyzerTab({ model, language }) {
             </div>
 
             <div className="form-group">
+              <label>Upload Supporting Documents</label>
+              <input
+                type="file"
+                multiple
+                onChange={handleCaseFilesChange}
+                className="file-input"
+                accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+              />
+              <p className="help-text">Upload evidence, court orders, FIRs or document scans to attach to case analysis.</p>
+              {fileUploadError && <p className="form-error">{fileUploadError}</p>}
+              {caseFiles.length > 0 && (
+                <div className="chips-container">
+                  {caseFiles.map((file, i) => (
+                    <span key={i} className="chip">
+                      {file.filename} <X size={10} className="chip-remove" onClick={() => handleRemoveCaseFile(i)} />
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="form-group">
               <label>Key Witnesses</label>
               <div className="list-adder-input">
-                <input 
-                  type="text" 
-                  value={newWitness} 
+                <input
+                  type="text"
+                  value={newWitness}
                   onChange={e => setNewWitness(e.target.value)}
                   placeholder="e.g. Eyewitness, Doctor, Accountant"
                   onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddWitness())}
@@ -509,9 +606,9 @@ export default function CaseAnalyzerTab({ model, language }) {
             <div className="form-group">
               <label>Specific Reliefs Sought</label>
               <div className="list-adder-input">
-                <input 
-                  type="text" 
-                  value={newRelief} 
+                <input
+                  type="text"
+                  value={newRelief}
                   onChange={e => setNewRelief(e.target.value)}
                   placeholder="e.g. Return of property, Compensation of 5 Lakhs"
                   onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddRelief())}
@@ -532,7 +629,7 @@ export default function CaseAnalyzerTab({ model, language }) {
 
           <div className="section-group-card">
             <h3>⚙️ Context & Settings</h3>
-            
+
             <div className="form-row">
               <div className="form-group flex-1">
                 <label>Urgency Level</label>
@@ -570,7 +667,7 @@ export default function CaseAnalyzerTab({ model, language }) {
             </div>
           </div>
 
-          <button 
+          <button
             className="btn-primary w-full py-3 text-sm font-semibold uppercase tracking-wider"
             onClick={handleAnalyze}
             disabled={isAnalyzing}
@@ -589,6 +686,17 @@ export default function CaseAnalyzerTab({ model, language }) {
               <div className="progress-bar-container">
                 <div className="progress-bar-fill"></div>
               </div>
+            </div>
+          ) : analysisError ? (
+            <div className="analysis-error-card">
+              <h3>Error Generating Analysis</h3>
+              <p>{analysisError}</p>
+              {analysisRawOutput && (
+                <div className="raw-output-box">
+                  <h4>Raw AI Output</h4>
+                  <pre>{analysisRawOutput}</pre>
+                </div>
+              )}
             </div>
           ) : !analysisResult ? (
             <div className="output-placeholder">
@@ -686,7 +794,7 @@ export default function CaseAnalyzerTab({ model, language }) {
                 {activeReportTab === 'roadmap' && (
                   <div className="report-tab-content animate-fade-in">
                     <h3 className="font-serif border-bottom pb-2 mb-3">Applicable Statutes & Legal Bases</h3>
-                    
+
                     <div className="applicable-laws-list">
                       {analysisResult.applicable_laws?.map((law, i) => (
                         <div key={i} className="law-item-card border p-3 rounded-lg mb-3">
@@ -741,7 +849,7 @@ export default function CaseAnalyzerTab({ model, language }) {
                         <span className="probability-success font-mono">Prob. of Success: {analysisResult.legal_strategy?.primary_strategy?.probability_of_success}</span>
                       </div>
                       <p className="text-xs leading-relaxed mt-2">{analysisResult.legal_strategy?.primary_strategy?.description}</p>
-                      
+
                       <h4 className="text-xs font-mono font-bold mt-3">Action Steps:</h4>
                       <ol className="font-mono text-xs leading-relaxed mt-1">
                         {analysisResult.legal_strategy?.primary_strategy?.steps?.map((st, i) => (

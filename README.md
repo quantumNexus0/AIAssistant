@@ -1,134 +1,124 @@
 # Nyaya AI Legal Assistant
 
-A full-stack Indian legal assistant application built with a React/Vite frontend and a FastAPI backend. It combines legal knowledge, chat-driven conversation, rights exploration, case analysis, and document drafting using AI-powered reasoning.
+A full-stack Indian legal assistant application built with a React/Vite frontend and a FastAPI backend. Nyaya AI helps lawyers, litigants, and legal researchers with case analysis, document drafting, legal research, and evidence tracking.
 
-## Overview
+## What this project does
 
-Nyaya AI provides:
-- **AI Legal Chat** for Indian law questions and legal guidance
-- **Know Your Rights** explorer with constitutional and statutory rights
-- **Case Analyzer** to summarize and analyze legal matters
-- **Document Drafter** for legal forms, notices, and applications
-- **Legal Tools & References** for laws, acts, and procedural guidance
+- **AI Legal Chat** for Indian legal guidance and Q&A
+- **Case Analysis** for structured assessment of case facts, evidence, witnesses, and reliefs
+- **Document Drafting** for court-ready plaints, notices, applications, and affidavits
+- **Attachment support** for uploading evidence files and supporting documents
+- **Persistent storage** for analysis reports and drafted documents in MongoDB
+- **Ollama-based AI** integration for legal reasoning and drafting
 
-The project includes a modern browser UI in `frontend/` and a MongoDB-backed API server in `backend/`.
+## Key improvements in this version
 
-## Architecture
-
-```mermaid
-flowchart LR
-    UI[Frontend<br/>React + Vite] -->|HTTP API| API[Backend<br/>FastAPI]
-    API -->|MongoDB Driver| DB[(MongoDB)]
-    API -->|Ollama HTTP| OLLAMA[Ollama Model Server]
-    API -->|Chat Sessions + Persistance| DB
-    UI -->|User Interaction| UI
-```
-
-If Mermaid diagrams are not rendered, the architecture can be understood as:
-
-```
-Frontend (React/Vite)
-      |
-      v
-Backend (FastAPI)
-     / \
-    /   \
-MongoDB  Ollama AI Inference
-```
-
-## Features
-
-- **AI conversation tab** with contextual legal chat and model selection
-- **Truth & rights tab** with curated constitutional rights cards
-- **Case analysis tab** for structured legal matter breakdown
-- **Document drafting tab** for legal notices and pleadings
-- **Legal tools tab** for key Indian laws and citations
-- **MongoDB persistence** for chat history and session storage
+- Added **file upload support** for the Case Analyzer Materials & Claims section
+- Added **supporting document upload** for Document Drafting Assistant
+- Saved document attachments alongside MongoDB drafts
+- Added a **download draft** button for generated documents
+- Improved README and developer setup instructions
 
 ## Project structure
 
 - `backend/`
-  - `app/main.py` — FastAPI application entry point
-  - `app/config.py` — environment configuration values
-  - `app/database.py` — MongoDB connection helpers
-  - `app/routers/` — API router modules for AI, chats, cases, documents
+  - `app/main.py` — FastAPI entry point
+  - `app/config.py` — environment configuration
+  - `app/database.py` — MongoDB connection helper
+  - `app/routers/` — REST API endpoints for AI, cases, and document storage
 - `frontend/`
-  - `src/` — React app source files
-  - `src/components/` — UI components for tabs and layout
-  - `App.jsx` — root app and tab switcher
-  - `App.css` — global styling
-  - `package.json` — frontend dependencies and scripts
+  - `src/` — React application source
+  - `src/components/` — UI components for each app tab
+  - `App.jsx` — root application wrapper and tab router
+  - `App.css` — styling
 
-## Technology stack
+## Architecture
 
-- Frontend: React 19, Vite, lucide-react icons, modern CSS
-- Backend: Python FastAPI, Uvicorn, Pydantic, Motor, HTTPX
-- Persistence: MongoDB
-- AI integration: Ollama inference via HTTP
+The app consists of:
 
-## Setup
+- React/Vite frontend
+- FastAPI backend
+- MongoDB persistence
+- Ollama model server for AI inference
 
-### Backend
+## Features
 
-1. Create and activate a Python virtual environment:
+- Full case fact collection with jurisdiction, parties, orders, evidence, witnesses, and reliefs
+- AI-driven legal analysis returning structured recommendations and strategy
+- File attachment capture for evidence and supporting documents
+- Document drafting assistant with prayers and court-ready formatting
+- Draft download + saved draft archive
+- MongoDB-backed persistence for analysis and draft history
+
+## Backend setup
+
+1. Open PowerShell in the repo root.
+2. Create and activate a Python virtual environment:
    ```powershell
    python -m venv .venv
    .\.venv\Scripts\Activate.ps1
    ```
-2. Install requirements:
+3. Install backend dependencies:
    ```powershell
    pip install -r backend/requirements.txt
    ```
-3. Configure environment variables as needed:
+4. Set recommended environment variables if needed:
    - `OLLAMA_HOST_URL` (default: `http://localhost:11434`)
    - `MONGO_URI` (default: `mongodb://localhost:27017`)
    - `DATABASE_NAME` (default: `nyaya_ai`)
    - `PORT` (default: `8000`)
-4. Run the backend:
+5. Start the backend:
    ```powershell
    uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
    ```
 
-### Frontend
+## Frontend setup
 
-1. Install dependencies:
+1. Open a terminal in `frontend/`.
+2. Install dependencies:
    ```powershell
-   cd frontend
    npm install
    ```
-2. Start the dev server:
+3. Start the dev server:
    ```powershell
    npm run dev
    ```
-3. Open the app in the browser (default Vite address).
+4. Open the Vite-hosted URL shown in the terminal.
+
+## Usage notes
+
+- Use the **Case Analyzer** to enter full narrative facts and upload evidence files.
+- Use the **Document Drafter** to draft pleadings and upload supporting documents.
+- Generated drafts can be copied or downloaded directly.
+- Saved drafts and case analyses persist in MongoDB.
 
 ## Environment variables
 
-These values are read from the environment by `backend/app/config.py`:
+The backend reads these from the environment:
 
-- `OLLAMA_HOST_URL` — Ollama inference server URL
-- `MONGO_URI` — MongoDB connection URI
+- `OLLAMA_HOST_URL` — Ollama server URL
+- `MONGO_URI` — MongoDB connection string
 - `DATABASE_NAME` — Mongo database name
-- `PORT` — backend server port
+- `PORT` — backend HTTP port
 
-## Running the app
+## Deployment
 
-- Start MongoDB locally or use a hosted MongoDB cluster.
-- Ensure Ollama is running and accessible at the configured host.
-- Launch the backend, then start the frontend dev server.
+- Build the frontend with `npm run build` inside `frontend/`.
+- Serve the static files from a web server, or integrate with FastAPI.
+- Deploy the backend as a container or Python app with Uvicorn/Gunicorn.
 
-## Deployment notes
+## Troubleshooting
 
-- Use `npm run build` in `frontend/` to create a production build.
-- Serve the production frontend from a static host or integrate with the backend.
-- Deploy the FastAPI backend using Uvicorn, Gunicorn, or a container.
+- If AI calls fail, make sure Ollama is running and reachable.
+- If MongoDB calls fail, verify `MONGO_URI` and that MongoDB is accessible.
+- For large file uploads, keep attachments within reasonable size limits.
 
 ## Contributing
 
-- Make changes in the `frontend/src/` or `backend/app/` directories.
-- Keep API routes in the `routers/` folder.
-- Use descriptive commits and keep generated Python cache files out of version control.
+- Modify UI components in `frontend/src/components/`
+- Extend backend endpoints in `backend/app/routers/`
+- Keep MongoDB documents consistent by reusing request/response fields
 
 ## License
 
-This repository does not include a license file by default. Add a license file if you want to open-source the project.
+Add a license file if you want to open-source this repository.

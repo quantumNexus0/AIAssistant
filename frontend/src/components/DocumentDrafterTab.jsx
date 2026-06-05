@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Copy, FileText, Check, Trash2, ArrowRight,
   ScrollText, Lock, Scale, BookOpen, Hand, ClipboardList,
@@ -29,6 +29,8 @@ export default function DocumentDrafterTab({ model, language }) {
   const [barNo, setBarNo] = useState('');
   const [prayers, setPrayers] = useState([]);
   const [newPrayer, setNewPrayer] = useState('');
+  const [supportingFiles, setSupportingFiles] = useState([]);
+  const [fileUploadError, setFileUploadError] = useState('');
 
   const [isDrafting, setIsDrafting] = useState(false);
   const [draftedText, setDraftedText] = useState('');
@@ -50,7 +52,10 @@ export default function DocumentDrafterTab({ model, language }) {
   };
 
   useEffect(() => {
-    fetchSavedDrafts();
+    const loadDrafts = async () => {
+      await fetchSavedDrafts();
+    };
+    loadDrafts();
   }, []);
 
   const handleAddPrayer = () => {
@@ -62,6 +67,54 @@ export default function DocumentDrafterTab({ model, language }) {
 
   const handleRemovePrayer = (i) => {
     setPrayers(prayers.filter((_, idx) => idx !== i));
+  };
+
+  const readFileAsBase64 = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const base64 = dataUrl.split(',')[1] || '';
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error('Unable to read file'));
+    reader.readAsDataURL(file);
+  });
+
+  const handleSupportingFilesChange = async (event) => {
+    setFileUploadError('');
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+    try {
+      const attachments = await Promise.all(files.map(async (file) => ({
+        filename: file.name,
+        content_type: file.type || 'application/octet-stream',
+        size: file.size,
+        content_base64: await readFileAsBase64(file),
+      })));
+      setSupportingFiles(prev => [...prev, ...attachments]);
+    } catch (err) {
+      console.error(err);
+      setFileUploadError('Unable to read document attachments. Please try again.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleRemoveSupportingFile = (index) => {
+    setSupportingFiles(supportingFiles.filter((_, idx) => idx !== index));
+  };
+
+  const handleDownloadDraft = () => {
+    if (!draftedText) return;
+    const blob = new Blob([draftedText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${selectedTemplateId || 'legal_draft'}.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
   };
 
   const handleDraftDocument = async () => {
@@ -83,8 +136,10 @@ export default function DocumentDrafterTab({ model, language }) {
       parties: { petitioner: party1, respondent: party2 },
       court_details: courtDetails || "IN THE COURT OF APPROPRIATE JURISDICTION",
       specific_prayers: prayers.length > 0 ? prayers : undefined,
+      supporting_documents: supportingFiles.length > 0 ? supportingFiles : undefined,
       advocate_name: advocateName || undefined,
-      bar_council_number: barNo || undefined
+      bar_council_number: barNo || undefined,
+      language_preference: language || 'english'
     };
 
     try {
@@ -114,7 +169,8 @@ export default function DocumentDrafterTab({ model, language }) {
           document_type: selectedTemplateId,
           parties: { petitioner: party1, respondent: party2 },
           court_details: courtDetails,
-          draft_text: resultText
+          draft_text: resultText,
+          attachments: supportingFiles.length > 0 ? supportingFiles : undefined
         })
       });
       fetchSavedDrafts();
@@ -139,6 +195,7 @@ export default function DocumentDrafterTab({ model, language }) {
         setParty1(data.parties?.petitioner || '');
         setParty2(data.parties?.respondent || '');
         setCourtDetails(data.court_details || '');
+        setSupportingFiles(data.attachments || []);
       }
     } catch (err) {
       console.error(err);
@@ -310,6 +367,27 @@ export default function DocumentDrafterTab({ model, language }) {
               )}
             </div>
 
+            <div className="section-group-card">
+              <h3>Upload Supporting Documents</h3>
+              <input
+                type="file"
+                multiple
+                onChange={handleSupportingFilesChange}
+                accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+              />
+              <p className="help-text">Add supporting court orders, pleadings, or evidence files for the drafter.</p>
+              {fileUploadError && <p className="form-error">{fileUploadError}</p>}
+              {supportingFiles.length > 0 && (
+                <div className="chips-container">
+                  {supportingFiles.map((file, i) => (
+                    <span key={i} className="chip">
+                      {file.filename} <X size={10} className="chip-remove" onClick={() => handleRemoveSupportingFile(i)} />
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <button
               className="btn-primary w-full py-3 text-sm font-semibold uppercase tracking-wider mt-3"
               onClick={handleDraftDocument}
@@ -339,10 +417,16 @@ export default function DocumentDrafterTab({ model, language }) {
               <div className="draft-preview-dashboard">
                 <div className="report-toolbar print-hide">
                   <span className="font-mono text-xs text-muted">LEGAL DRAFT PREVIEW</span>
-                  <button className="btn-secondary btn-icon text-xs" onClick={handleCopy}>
-                    {copied ? <Check size={13} style={{ color: '#22c55e' }} /> : <Copy size={13} />}
-                    <span>{copied ? 'Copied!' : 'Copy Draft'}</span>
-                  </button>
+                  <div className="report-toolbar-actions">
+                    <button className="btn-secondary btn-icon text-xs" onClick={handleCopy}>
+                      {copied ? <Check size={13} style={{ color: '#22c55e' }} /> : <Copy size={13} />}
+                      <span>{copied ? 'Copied!' : 'Copy Draft'}</span>
+                    </button>
+                    <button className="btn-secondary btn-icon text-xs" onClick={handleDownloadDraft}>
+                      <FileText size={13} />
+                      <span>Download Draft</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="legal-paper-scroll">
                   <pre className="legal-doc-text font-mono text-xs">{draftedText}</pre>
