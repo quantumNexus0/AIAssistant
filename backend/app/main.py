@@ -4,46 +4,52 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from .config import PORT
-from .database import connect_db, disconnect_db
+from .database import connect_db, disconnect_db, init_db
 from .routers import ai, chats, cases, documents
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Connect to Database
+    # ── Startup ────────────────────────────────────────────────────────────────
     connect_db()
+    await init_db()   # create indexes for cases, documents, chats collections
     yield
-    # Shutdown: Disconnect Database
+    # ── Shutdown ───────────────────────────────────────────────────────────────
     disconnect_db()
+
 
 app = FastAPI(
     title="NyayaAI Backend",
-    description="FastAPI full-stack backend with MongoDB for legal chat and document storage.",
-    version="2.0.0",
-    lifespan=lifespan
+    description="FastAPI backend with MongoDB — AI Case Analysis, Document Drafting & Legal Chat.",
+    version="2.1.0",
+    lifespan=lifespan,
 )
 
-# CORS configuration
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, restrict to frontend domain
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Register routers
+# Routers
 app.include_router(ai.router)
 app.include_router(chats.router)
 app.include_router(cases.router)
 app.include_router(documents.router)
 
+
 @app.get("/")
 async def root():
     return {
         "app": "NyayaAI Legal Assistant API",
-        "version": "2.0.0",
-        "status": "online"
+        "version": "2.1.0",
+        "status": "online",
+        "collections": ["cases", "documents", "chats"],
     }
+
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=PORT, reload=True)

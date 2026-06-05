@@ -2329,3 +2329,193 @@ body {
   cursor: pointer;
   height: 24px;
 }
+/* ═══════════════════════════════════════════════
+   ACT REFERENCES — B&W clean grid
+   Add these rules at the end of your main CSS file
+   ═══════════════════════════════════════════════ */
+
+/* search bar above the grid */
+.refs-search-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+  border: 1px solid #000;
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.refs-search-icon {
+  flex-shrink: 0;
+  margin: 0 10px;
+  opacity: 0.45;
+}
+
+.refs-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 9px 8px 9px 0;
+  font-family: var(--font-sans);
+  font-size: 0.825rem;
+  background: transparent;
+  color: #000;
+}
+
+.refs-search-clear {
+  background: none;
+  border: none;
+  padding: 0 12px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  color: #666;
+  line-height: 1;
+}
+
+.refs-search-clear:hover {
+  color: #000;
+}
+
+/* card grid */
+.refs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+/* individual card */
+.ref-card {
+  border: 1px solid #000;
+  border-radius: 8px;
+  padding: 16px;
+  cursor: pointer;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ref-card:hover {
+  background: #000;
+  color: #fff;
+}
+
+.ref-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ref-badge {
+  display: inline-block;
+  background: #000;
+  color: #fff;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.ref-card:hover .ref-badge {
+  background: #fff;
+  color: #000;
+}
+
+.ref-card-icon {
+  color: #000;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.ref-card:hover .ref-card-icon {
+  color: #fff;
+  opacity: 1;
+}
+
+.ref-card-title {
+  font-family: var(--font-serif, sans-serif);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.35;
+  /* no extra margin — gap handles spacing */
+}
+
+.ref-card-desc {
+  font-size: 0.75rem;
+  color: #555;
+  line-height: 1.5;
+  flex: 1;
+  /* pushes CTA to bottom */
+}
+
+.ref-card:hover .ref-card-desc {
+  color: #ccc;
+}
+
+.ref-card-cta {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #000;
+  cursor: pointer;
+  text-align: left;
+  margin-top: 4px;
+  /* slight extra push from desc */
+}
+
+.ref-card:hover .ref-card-cta {
+  color: #fff;
+}
+
+.ref-card-cta:hover {
+  text-decoration: underline;
+}
+
+.refs-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 3rem 1rem;
+  font-size: 0.875rem;
+  color: #666;
+  border: 1px dashed #ccc;
+  border-radius: 8px;
+}
+
+/* responsive */
+@media (max-width: 900px) {
+  .refs-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .refs-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .ref-card {
+    padding: 12px;
+  }
+}
+
+/* ── save indicator (shown after a successful save to MongoDB) ── */
+.save-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-family: var(--font-mono, monospace);
+  color: #000;
+  opacity: 0.6;
+  padding-top: 4px;
+}

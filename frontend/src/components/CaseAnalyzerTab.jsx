@@ -261,8 +261,8 @@ export default function CaseAnalyzerTab({ model, language }) {
 
       setAnalysisResult(parsed);
 
-      // Auto-save this report to MongoDB cases archive
-      const title = `Analysis of ${caseType.toUpperCase()} - ${new Date().toLocaleDateString('en-IN')}`;
+      // Auto-save to MongoDB cases collection
+      const title = `${caseType.toUpperCase()} Analysis — ${new Date().toLocaleDateString('en-IN')}`;
       await fetch(`${API_BASE}/cases`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -270,8 +270,12 @@ export default function CaseAnalyzerTab({ model, language }) {
           title,
           case_type: caseType,
           client_side: clientSide,
+          jurisdiction_state: jurisdictionState || undefined,
+          target_court: targetCourt || undefined,
+          urgency_level: urgencyLevel || 'normal',
+          case_stage: caseStage || undefined,
           request_data: payload,
-          analysis_result: finalResult
+          analysis_result: parsed
         })
       });
       fetchSavedCases();
@@ -736,7 +740,11 @@ export default function CaseAnalyzerTab({ model, language }) {
                           Confidence: {analysisResult.analysis_metadata?.analysis_confidence || 'medium'}
                         </span>
                       </div>
-                      <h2 className="mt-3 font-serif">{sessionTitle}</h2>
+                      <h2 className="mt-3 font-serif">
+                        {analysisResult.analysis_metadata?.case_type
+                          ? `${analysisResult.analysis_metadata.case_type} — ${analysisResult.analysis_metadata.client_position || clientSide}`
+                          : `${caseType.toUpperCase()} Case Analysis`}
+                      </h2>
                       <p className="case-desc-summary leading-relaxed mt-2 italic text-sm">
                         "{analysisResult.executive_summary?.case_overview}"
                       </p>

@@ -160,7 +160,7 @@ export default function DocumentDrafterTab({ model, language }) {
 
       setDraftedText(resultText);
 
-      const docTitle = `Draft: ${template.title} (${party1.split(',')[0]} vs ${party2.split(',')[0]})`;
+      const docTitle = `Draft: ${template.title} (${party1.split(',')[0].trim()} vs ${party2.split(',')[0].trim()})`;
       await fetch(`${API_BASE}/documents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -168,8 +168,11 @@ export default function DocumentDrafterTab({ model, language }) {
           title: docTitle,
           document_type: selectedTemplateId,
           parties: { petitioner: party1, respondent: party2 },
-          court_details: courtDetails,
+          court_details: courtDetails || undefined,
+          advocate_name: advocateName || undefined,
+          bar_council_number: barNo || undefined,
           draft_text: resultText,
+          word_count: resultText.split(/\s+/).filter(Boolean).length,
           attachments: supportingFiles.length > 0 ? supportingFiles : undefined
         })
       });
