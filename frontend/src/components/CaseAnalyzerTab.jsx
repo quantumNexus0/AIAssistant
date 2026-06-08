@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { API_BASE } from '../config';
+
 import {
   Plus,
   Trash2,
@@ -18,7 +18,7 @@ import {
   X
 } from 'lucide-react';
 
-// const API_BASE = 'http://localhost:8000/api/v1';
+ const API_BASE = 'http://localhost:8000/api/v1';
 
 export default function CaseAnalyzerTab({ model, language }) {
   // Input Form State

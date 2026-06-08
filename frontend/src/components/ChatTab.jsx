@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Trash2, Download, Scale, ArrowRight, User, Shield, Scroll, Users, Home, HardHat, Briefcase, Cpu } from 'lucide-react';
-import { API_BASE } from '../config';
+
 
 const CHAT_MODES = [
   { id: 'general', name: 'General', icon: Scale },
@@ -12,7 +12,7 @@ const CHAT_MODES = [
   { id: 'tax', name: 'Tax', icon: Briefcase },
   { id: 'cyber', name: 'Cyber', icon: Cpu }
 ];
-// const API_BASE = 'http://localhost:8000/api/v1';
+ const API_BASE = 'http://localhost:8000/api/v1';
 // const SUGGESTED_TOPICS = [
 //   "What are my fundamental rights under the Indian Constitution?",
 //   "Explain the RTI Act and how to file a complaint",

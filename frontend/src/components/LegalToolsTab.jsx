@@ -5,8 +5,8 @@ import {
   Monitor, DollarSign, FileText, Wrench, Building2, Shield,
    CheckCircle
 } from 'lucide-react';
-import { API_BASE } from '../config';
-// const API_BASE = 'http://localhost:8000/api/v1';
+
+ const API_BASE = 'http://localhost:8000/api/v1';
 
 const REFS_DATA = [
   { Icon: Sword, title: 'Bharatiya Nyaya Sanhita (BNS) 2023', desc: 'New criminal code replacing IPC 1860 from July 2024. 358 sections covering all criminal offences.', badge: 'Criminal Law' },

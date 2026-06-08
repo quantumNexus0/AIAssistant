@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { API_BASE } from '../config';
+
 import {
   MessageSquare,
   Scale,
@@ -14,7 +14,7 @@ import {
   Gavel
 } from 'lucide-react';
 
-// const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = 'http://localhost:8000/api/v1';
 
 export default function Layout({
   children,

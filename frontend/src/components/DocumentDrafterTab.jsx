@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { API_BASE } from '../config';
+
 import {
   Copy, FileText, Check, Trash2, ArrowRight,
   ScrollText, Lock, Scale, BookOpen, Hand, ClipboardList,
   ShoppingCart, Shield, X
 } from 'lucide-react';
 
-
+const API_BASE = 'http://localhost:8000/api/v1';
 
 const DOC_TEMPLATES = [
   { id: 'legal_notice', Icon: ScrollText, title: 'Legal Notice', desc: 'Formal notice sent to respondent before initiating civil litigation.' },
