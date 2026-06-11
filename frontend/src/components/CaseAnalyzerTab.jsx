@@ -1,26 +1,79 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Component } from 'react';
 
 import {
   Plus,
   Trash2,
-  // ChevronRight,
-  // AlertTriangle,
-  // Calendar,
   FileText,
   Award,
-  // Map,
-  // Bookmark,
-  // TrendingUp,
   Printer,
-  // Clock,
-  // BookmarkCheck,
-  // ChevronDown,
   X
 } from 'lucide-react';
 
- const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+
+// ── Error Boundary: catches any render crash in the report panel ──────────────
+class ReportErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, errorMsg: '' };
+  }
+  static getDerivedStateFromError(err) {
+    return { hasError: true, errorMsg: err?.message || String(err) };
+  }
+  componentDidUpdate(prevProps) {
+    // Reset when analysisResult changes so a new result can re-render
+    if (prevProps.resultKey !== this.props.resultKey) {
+      this.setState({ hasError: false, errorMsg: '' });
+    }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="analysis-error-card" style={{ margin: '2rem' }}>
+          <h3>⚠ Report Render Error</h3>
+          <p>An unexpected error occurred while displaying the report. The AI response may have an unusual format.</p>
+          <p style={{ fontFamily: 'monospace', fontSize: '0.75rem', marginTop: '0.5rem', opacity: 0.7 }}>{this.state.errorMsg}</p>
+          <button
+            className="btn-secondary mt-3 text-xs"
+            onClick={() => this.setState({ hasError: false })}
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function CaseAnalyzerTab({ model, language }) {
+  const safeStr = (val) => {
+    if (val === null || val === undefined) return '';
+    if (typeof val === 'object') {
+      if (val.action) return val.action;
+      if (val.description) return val.description;
+      if (val.issue) return val.issue;
+      if (val.step) return val.step;
+      if (val.name) return val.name;
+      if (val.title) return val.title;
+      // Fallback: join all string values
+      return Object.values(val).filter(v => typeof v === 'string' || typeof v === 'number').join(' — ');
+    }
+    return String(val);
+  };
+
+  const ensureArray = (val) => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val;
+    if (typeof val === 'object') {
+      // If it's an object with a single array property, return that array
+      const arrays = Object.values(val).filter(Array.isArray);
+      if (arrays.length === 1) return arrays[0];
+      return [val];
+    }
+    return [val];
+  };
+
   // Input Form State
   const [caseType, setCaseType] = useState('criminal');
   const [caseDescription, setCaseDescription] = useState('');
@@ -134,24 +187,36 @@ export default function CaseAnalyzerTab({ model, language }) {
   };
 
   const parseOllamaResponse = (data) => {
-    if (typeof data === 'object' && !data.response && !data.message?.content) {
-      return { parsed: data, raw: JSON.stringify(data, null, 2) };
+    // Backend already pre-parses the JSON from Ollama.
+    // If the data has known top-level keys from our schema, it's already parsed.
+    const KNOWN_KEYS = ['analysis_metadata', 'executive_summary', 'applicable_laws',
+      'legal_issues', 'procedural_roadmap', 'legal_strategy', 'risk_assessment',
+      'estimated_timeline', 'precedents_and_case_law', 'recommended_actions',
+      'raw_text', 'parse_error'];
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      // Check if it looks like a backend-pre-parsed result (has at least one known key)
+      const hasKnownKey = KNOWN_KEYS.some(k => k in data);
+      // NOT an Ollama envelope (those have 'model', 'message', 'response' at top level)
+      const isOllamaEnvelope = 'model' in data && ('message' in data || 'response' in data);
+      if (hasKnownKey && !isOllamaEnvelope) {
+        return { parsed: data, raw: JSON.stringify(data, null, 2) };
+      }
     }
 
     let raw = '';
     if (typeof data === 'string') {
       raw = data.trim();
-    } else if (data.response) {
-      raw = data.response;
-    } else if (data.message?.content) {
+    } else if (data?.message?.content) {
       raw = data.message.content;
+    } else if (data?.response) {
+      raw = data.response;
     } else {
       raw = JSON.stringify(data, null, 2);
     }
 
-    let cleaned = raw;
+    let cleaned = raw.trim();
     if (cleaned.startsWith('```json')) cleaned = cleaned.substring(7);
-    if (cleaned.startsWith('```')) cleaned = cleaned.substring(3);
+    else if (cleaned.startsWith('```')) cleaned = cleaned.substring(3);
     if (cleaned.endsWith('```')) cleaned = cleaned.substring(0, cleaned.length - 3);
     cleaned = cleaned.trim();
 
@@ -159,7 +224,8 @@ export default function CaseAnalyzerTab({ model, language }) {
       const parsed = JSON.parse(cleaned);
       return { parsed, raw };
     } catch (err) {
-      return { parsed: null, raw };
+      // Return raw text as a pseudo-result so the UI can show it
+      return { parsed: { raw_text: raw, parse_error: 'Model did not return structured JSON.' }, raw };
     }
   };
 
@@ -233,12 +299,18 @@ export default function CaseAnalyzerTab({ model, language }) {
       language_preference: language
     };
 
+    // Abort controller for 3-minute timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3 * 60 * 1000);
+
     try {
       const res = await fetch(`${API_BASE}/ai/analyze-case`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       if (!res.ok) {
         let errorText;
         try {
@@ -253,13 +325,8 @@ export default function CaseAnalyzerTab({ model, language }) {
       }
 
       const data = await res.json();
-      const { parsed, raw } = parseOllamaResponse(data);
-      if (!parsed) {
-        setAnalysisError('Unable to parse AI response into structured JSON. Raw response shown below.');
-        setAnalysisRawOutput(raw);
-        return;
-      }
-
+      const { parsed } = parseOllamaResponse(data);
+      // parsed is always truthy — either real structured data or { raw_text, parse_error }
       setAnalysisResult(parsed);
 
       // Auto-save to MongoDB cases collection
@@ -282,9 +349,14 @@ export default function CaseAnalyzerTab({ model, language }) {
       fetchSavedCases();
 
     } catch (err) {
+      clearTimeout(timeoutId);
       console.error(err);
-      setAnalysisError('Failed to analyze case. Check the model server and raw output.');
-      setAnalysisRawOutput(err.message || String(err));
+      if (err.name === 'AbortError') {
+        setAnalysisError('Request timed out after 3 minutes. The model may be too slow or unavailable. Try a faster model like llama3.2.');
+      } else {
+        setAnalysisError('Failed to analyze case. Check the model server and raw output.');
+        setAnalysisRawOutput(err.message || String(err));
+      }
     } finally {
       setIsAnalyzing(false);
     }
@@ -295,18 +367,26 @@ export default function CaseAnalyzerTab({ model, language }) {
     setSelectedSavedCaseId(id);
     if (!id) {
       setAnalysisResult(null);
+      setAnalysisError('');
+      setAnalysisRawOutput('');
       return;
     }
+
+    // Clear any previous error and reset to summary tab
+    setAnalysisError('');
+    setAnalysisRawOutput('');
+    setActiveReportTab('summary');
 
     // Load from MongoDB
     try {
       const res = await fetch(`${API_BASE}/cases/${id}`);
       if (res.ok) {
         const data = await res.json();
-        setAnalysisResult(data.analysis_result);
+        // The stored analysis_result is already a plain parsed object
+        setAnalysisResult(data.analysis_result || null);
 
-        // Repopulate form
-        const req = data.request_data;
+        // Repopulate form from saved request
+        const req = data.request_data || {};
         setCaseType(req.case_type || 'criminal');
         setCaseDescription(req.case_description || '');
         setClientSide(req.client_side || 'petitioner');
@@ -324,9 +404,12 @@ export default function CaseAnalyzerTab({ model, language }) {
         setFinancialStakes(req.financial_stakes || '');
         setSpecialCircumstances(req.special_circumstances || '');
         setOpposingArguments(req.opposing_arguments || '');
+      } else {
+        setAnalysisError('Failed to load saved case. Please try again.');
       }
     } catch (err) {
       console.error(err);
+      setAnalysisError('Network error loading saved case.');
     }
   };
 
@@ -710,6 +793,7 @@ export default function CaseAnalyzerTab({ model, language }) {
               <p>Fill out the case facts on the left and run analysis to view the complete diagnostic report, timelines, strategy, and risk scorecard.</p>
             </div>
           ) : (
+            <ReportErrorBoundary resultKey={JSON.stringify(analysisResult).slice(0, 80)}>
             <div className="analysis-report-dashboard">
               {/* Report Control Toolbar */}
               <div className="report-toolbar print-hide">
@@ -747,7 +831,7 @@ export default function CaseAnalyzerTab({ model, language }) {
                           : `${caseType.toUpperCase()} Case Analysis`}
                       </h2>
                       <p className="case-desc-summary leading-relaxed mt-2 italic text-sm">
-                        "{analysisResult.executive_summary?.case_overview}"
+                        {analysisResult.executive_summary?.case_overview}
                       </p>
                     </div>
 
@@ -769,8 +853,8 @@ export default function CaseAnalyzerTab({ model, language }) {
                     <div className="actions-card mt-4">
                       <h4 className="font-mono text-xs uppercase text-danger mb-2">Critical Immediate Actions Required</h4>
                       <ul>
-                        {analysisResult.executive_summary?.critical_immediate_actions?.map((act, i) => (
-                          <li key={i} className="text-sm font-semibold mt-1">⚠️ {act}</li>
+                        {ensureArray(analysisResult.executive_summary?.critical_immediate_actions).map((act, i) => (
+                          <li key={i} className="text-sm font-semibold mt-1">⚠️ {safeStr(act)}</li>
                         ))}
                       </ul>
                     </div>
@@ -782,7 +866,7 @@ export default function CaseAnalyzerTab({ model, language }) {
                           <h5 className="text-xs font-bold font-mono">Legally Provable Facts</h5>
                           <ul>
                             {analysisResult.case_facts_analysis?.established_facts?.map((f, i) => (
-                              <li key={i} className="text-xs">{f}</li>
+                              <li key={i} className="text-xs">✓ {safeStr(f)}</li>
                             ))}
                           </ul>
                         </div>
@@ -790,12 +874,52 @@ export default function CaseAnalyzerTab({ model, language }) {
                           <h5 className="text-xs font-bold font-mono">Opposing Contested Facts</h5>
                           <ul>
                             {analysisResult.case_facts_analysis?.disputed_facts?.map((f, i) => (
-                              <li key={i} className="text-xs text-warning">{f}</li>
+                              <li key={i} className="text-xs text-warning">⚠ {safeStr(f)}</li>
                             ))}
                           </ul>
                         </div>
                       </div>
                     </div>
+
+                    {/* Key dates timeline */}
+                    {analysisResult.case_facts_analysis?.key_dates_timeline?.length > 0 && Array.isArray(analysisResult.case_facts_analysis.key_dates_timeline) && (
+                      <div className="mt-4 border p-3 rounded-lg">
+                        <h4 className="font-mono text-xs uppercase mb-2">Key Dates Timeline</h4>
+                        {analysisResult.case_facts_analysis.key_dates_timeline.map((ev, i) => (
+                          <div key={i} className="font-mono text-xs border-bottom py-1">
+                            <span className="text-danger font-bold">{safeStr(ev.date)}</span> — {safeStr(ev.event)}
+                            {ev.legal_significance && <span className="text-muted ml-2">({safeStr(ev.legal_significance)})</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Legal Issues */}
+                    {analysisResult.legal_issues?.length > 0 && (
+                      <div className="mt-4 border p-3 rounded-lg">
+                        <h4 className="font-mono text-xs uppercase mb-2">Legal Issues Identified</h4>
+                        {analysisResult.legal_issues.map((issue, i) => (
+                          <div key={i} className="mb-3 border-bottom pb-2">
+                            <div className="font-bold text-xs">
+                              #{issue.issue_number} — {issue.issue}
+                              <span className={`ml-2 favours-badge ${issue.importance === 'critical' ? 'danger' : issue.importance === 'high' ? 'warning' : 'neutral'}`}>
+                                {issue.importance?.toUpperCase()}
+                              </span>
+                            </div>
+                            <div className="text-xs mt-1"><strong>Our position:</strong> {issue.client_position}</div>
+                            <div className="text-xs mt-1 text-muted"><strong>Likely outcome:</strong> {issue.likely_outcome}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Raw text fallback */}
+                    {analysisResult.raw_text && (
+                      <div className="raw-output-box mt-4">
+                        <h4>AI Response (Raw Text)</h4>
+                        <pre style={{whiteSpace: 'pre-wrap', wordBreak: 'break-word'}}>{analysisResult.raw_text}</pre>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -805,10 +929,10 @@ export default function CaseAnalyzerTab({ model, language }) {
                     <h3 className="font-serif border-bottom pb-2 mb-3">Applicable Statutes & Legal Bases</h3>
 
                     <div className="applicable-laws-list">
-                      {analysisResult.applicable_laws?.map((law, i) => (
+                      {ensureArray(analysisResult.applicable_laws).map((law, i) => (
                         <div key={i} className="law-item-card border p-3 rounded-lg mb-3">
                           <div className="law-item-title font-bold text-sm">
-                            {law.act_name} — {law.section}
+                            {safeStr(law.act_name)} — {safeStr(law.section)}
                           </div>
                           {law.new_law_equivalent && (
                             <div className="new-law-badge text-xs font-mono text-muted mb-2">
@@ -816,7 +940,7 @@ export default function CaseAnalyzerTab({ model, language }) {
                             </div>
                           )}
                           <p className="law-exact-text text-xs italic mt-1 font-mono text-muted">
-                            "{law.exact_text}"
+                            {law.exact_text}
                           </p>
                           <p className="law-item-description text-xs mt-2 leading-relaxed">
                             <strong>Applicability:</strong> {law.applicability}
@@ -831,16 +955,49 @@ export default function CaseAnalyzerTab({ model, language }) {
                       ))}
                     </div>
 
-                    {analysisResult.constitutional_provisions && analysisResult.constitutional_provisions.length > 0 && (
+                    {ensureArray(analysisResult.constitutional_provisions).length > 0 && (
                       <>
                         <h3 className="font-serif border-bottom pb-2 mt-4 mb-3">Constitutional Angles & Writs</h3>
-                        {analysisResult.constitutional_provisions.map((c, i) => (
+                        {ensureArray(analysisResult.constitutional_provisions).map((c, i) => (
                           <div key={i} className="constitutional-card border p-3 rounded-lg mb-3">
-                            <div className="font-bold text-sm">{c.article} ({c.title})</div>
-                            <p className="text-xs mt-1">{c.relevance}</p>
-                            <span className="badge text-xs font-mono mt-1">Enforcement: {c.enforcement_mechanism}</span>
+                            <div className="font-bold text-sm">{safeStr(c.article)} ({safeStr(c.title)})</div>
+                            <p className="text-xs mt-1">{safeStr(c.relevance)}</p>
+                            <span className="badge text-xs font-mono mt-1">Enforcement: {safeStr(c.enforcement_mechanism)}</span>
                           </div>
                         ))}
+                      </>
+                    )}
+
+                    {/* Procedural Roadmap */}
+                    {analysisResult.procedural_roadmap && (
+                      <>
+                        <h3 className="font-serif border-bottom pb-2 mt-4 mb-3">Procedural Roadmap — Immediate Steps</h3>
+                        {ensureArray(analysisResult.procedural_roadmap.immediate_steps).map((step, i) => (
+                          <div key={i} className="law-item-card border p-3 rounded-lg mb-3">
+                            <div className="font-bold text-sm">Step {i+1}: {safeStr(step.action)}</div>
+                            <div className="text-xs mt-1 font-mono text-muted">Forum: {safeStr(step.forum)} | Timeline: {safeStr(step.timeline)}</div>
+                            {step.court_fee && <div className="text-xs mt-1">Court Fee: {safeStr(step.court_fee)}</div>}
+                            {step.legal_basis && <div className="text-xs mt-1"><strong>Legal basis:</strong> {safeStr(step.legal_basis)}</div>}
+                            {step.documents_needed?.length > 0 && Array.isArray(step.documents_needed) && (
+                              <div className="text-xs mt-2">
+                                <strong>Documents needed:</strong>
+                                <ul className="mt-1">{step.documents_needed.map((d, j) => <li key={j}>• {safeStr(d)}</li>)}</ul>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+
+                        {ensureArray(analysisResult.procedural_roadmap.short_term_steps).length > 0 && (
+                          <>
+                            <h4 className="font-mono text-xs uppercase mt-3 mb-2">Short-term Steps</h4>
+                            {ensureArray(analysisResult.procedural_roadmap.short_term_steps).map((step, i) => (
+                              <div key={i} className="font-mono text-xs border-bottom py-2">
+                                <strong>{safeStr(step.action)}</strong> — {safeStr(step.timeline)}
+                                {step.dependencies && <span className="text-muted ml-2">(depends: {safeStr(step.dependencies)})</span>}
+                              </div>
+                            ))}
+                          </>
+                        )}
                       </>
                     )}
                   </div>
@@ -867,7 +1024,36 @@ export default function CaseAnalyzerTab({ model, language }) {
                           </li>
                         ))}
                       </ol>
+
+                      {analysisResult.legal_strategy?.primary_strategy?.strengths?.length > 0 && (
+                        <>
+                          <h4 className="text-xs font-mono font-bold mt-3">Strategy Strengths:</h4>
+                          <ul className="font-mono text-xs">
+                            {analysisResult.legal_strategy.primary_strategy.strengths.map((s, i) => (
+                              <li key={i} className="text-success">✓ {s}</li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
+                      {analysisResult.legal_strategy?.primary_strategy?.risks?.length > 0 && (
+                        <>
+                          <h4 className="text-xs font-mono font-bold mt-3">Risks:</h4>
+                          <ul className="font-mono text-xs">
+                            {analysisResult.legal_strategy.primary_strategy.risks.map((r, i) => (
+                              <li key={i} className="text-danger">⚠ {r}</li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
                     </div>
+
+                    {/* Alternative Strategy */}
+                    {analysisResult.legal_strategy?.alternative_strategy && (
+                      <div className="strategy-card border p-3 rounded-lg mb-3">
+                        <div className="font-mono font-bold text-xs">Alternative Strategy: {analysisResult.legal_strategy.alternative_strategy.approach}</div>
+                        <p className="text-xs mt-1 leading-relaxed">{analysisResult.legal_strategy.alternative_strategy.description}</p>
+                      </div>
+                    )}
 
                     <div className="strategy-grid-split">
                       <div className="strategy-card border p-3 rounded-lg">
@@ -891,6 +1077,20 @@ export default function CaseAnalyzerTab({ model, language }) {
                       </div>
                     </div>
 
+                    {/* Opposing Counsel Counter-args */}
+                    {analysisResult.opposing_counsel_strategy?.counter_arguments?.length > 0 && (
+                      <div className="strategy-card border p-3 rounded-lg mt-3">
+                        <h4 className="text-xs font-mono font-bold mb-2">Counter-Arguments to Opposing Counsel</h4>
+                        {analysisResult.opposing_counsel_strategy.counter_arguments.map((ca, i) => (
+                          <div key={i} className="mb-2 border-bottom pb-2 text-xs">
+                            <div className="text-muted"><em>Their argument:</em> {ca.their_argument}</div>
+                            <div className="mt-1"><strong>Our counter:</strong> {ca.our_counter}</div>
+                            {ca.supporting_law && <div className="font-mono text-muted mt-1">Law: {ca.supporting_law}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     <h3 className="font-serif border-bottom pb-2 mt-4 mb-3">Advocate Oral Briefing Notes</h3>
                     <div className="strategy-card border p-3 rounded-lg">
                       <h4 className="text-xs font-mono font-bold mb-1">Key Points to Emphasize to Bench</h4>
@@ -904,7 +1104,7 @@ export default function CaseAnalyzerTab({ model, language }) {
                         {analysisResult.advocate_briefing_notes?.suggested_answers?.map((qa, i) => (
                           <li key={i} className="mt-2">
                             <strong>Q: "{qa.question}"</strong>
-                            <p className="text-muted italic">A: "{qa.suggested_answer}"</p>
+                            <p className="text-muted italic">A: {qa.suggested_answer}</p>
                           </li>
                         ))}
                       </ul>
@@ -948,18 +1148,55 @@ export default function CaseAnalyzerTab({ model, language }) {
                           <span>{analysisResult.risk_assessment?.risk_breakdown?.financial_risk?.score || 0}/100</span>
                         </div>
                       </div>
+
+                      {/* Best/Worst/Likely outcomes */}
+                      {analysisResult.risk_assessment?.most_likely_outcome && (
+                        <div className="mt-3 text-xs">
+                          <div className="mb-1"><strong className="text-success">Best case:</strong> {analysisResult.risk_assessment.best_case_scenario}</div>
+                          <div className="mb-1"><strong className="text-danger">Worst case:</strong> {analysisResult.risk_assessment.worst_case_scenario}</div>
+                          <div><strong>Most likely:</strong> {analysisResult.risk_assessment.most_likely_outcome}</div>
+                        </div>
+                      )}
+
+                      {/* Critical risks */}
+                      {analysisResult.risk_assessment?.critical_risks?.length > 0 && (
+                        <div className="mt-3">
+                          <h4 className="font-mono text-xs font-bold uppercase mb-1">Critical Risks</h4>
+                          {analysisResult.risk_assessment.critical_risks.map((cr, i) => (
+                            <div key={i} className="border-bottom py-1 text-xs">
+                              <div><strong>{cr.risk}</strong> — Probability: {cr.probability} | Impact: {cr.impact}</div>
+                              <div className="text-muted italic">Mitigation: {cr.mitigation}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <h3 className="font-serif border-bottom pb-2 mb-3">Litigation Timelines & Deadlines</h3>
                     <div className="timeline-card border p-3 rounded-lg font-mono text-xs">
+                      <div><strong>Best case duration:</strong> {analysisResult.estimated_timeline?.best_case_duration}</div>
                       <div><strong>Estimated typical case duration:</strong> {analysisResult.estimated_timeline?.typical_duration || '12-24 months'}</div>
+                      <div><strong>Worst case duration:</strong> {analysisResult.estimated_timeline?.worst_case_duration}</div>
+
+                      {analysisResult.estimated_timeline?.key_milestones?.length > 0 && (
+                        <>
+                          <div className="mt-2 font-bold uppercase">Key Milestones:</div>
+                          <ul>
+                            {analysisResult.estimated_timeline.key_milestones.map((m, i) => (
+                              <li key={i} className="mt-1">• {m.milestone} — <span className="text-danger">{m.estimated_time_from_now}</span></li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
+
                       <div className="mt-2 font-bold uppercase">Limitation Periods (Critical Deadlines):</div>
                       <ul>
                         {analysisResult.procedural_roadmap?.limitation_periods?.map((lim, i) => (
                           <li key={i} className="mt-2 border-left pl-2">
-                            <strong>File: {lim.action}</strong>
-                            <div>Deadline: <span className="text-danger">{lim.deadline}</span> ({lim.applicable_law})</div>
+                            <strong>File: {safeStr(lim.action)}</strong>
+                            <div>Deadline: <span className="text-danger">{safeStr(lim.deadline)}</span> ({safeStr(lim.applicable_law)})</div>
                             <div>Condonation possible: {lim.condonation_possible ? "YES" : "NO"}</div>
+                            {lim.consequence_of_missing && <div className="text-danger text-xs italic">If missed: {safeStr(lim.consequence_of_missing)}</div>}
                           </li>
                         ))}
                       </ul>
@@ -969,12 +1206,27 @@ export default function CaseAnalyzerTab({ model, language }) {
                     <div className="precedents-card">
                       {analysisResult.precedents_and_case_law?.binding_precedents?.map((pr, i) => (
                         <div key={i} className="precedent-item border-bottom pb-2 mb-2">
-                          <span className="font-bold text-xs">{pr.case_name} ({pr.year})</span>
-                          <div className="text-xs text-muted font-mono">{pr.citation} | Bench: {pr.bench_strength}</div>
-                          <p className="text-xs italic mt-1 font-mono">Ratio: "{pr.ratio_decidendi}"</p>
-                          <p className="text-xs mt-1"><strong>Relevance:</strong> {pr.applicability_to_case}</p>
+                          <span className="font-bold text-xs">{safeStr(pr.case_name)} ({safeStr(pr.year)})</span>
+                          <div className="text-xs text-muted font-mono">{safeStr(pr.citation)} | Bench: {safeStr(pr.bench_strength)}</div>
+                          <p className="text-xs italic mt-1 font-mono">Ratio: "{safeStr(pr.ratio_decidendi)}"</p>
+                          <p className="text-xs mt-1"><strong>Relevance:</strong> {safeStr(pr.applicability_to_case)}</p>
+                          <span className={`favours-badge ${pr.favours}`}>Favours: {safeStr(pr.favours)}</span>
                         </div>
                       ))}
+
+                      {/* Recommended actions */}
+                      {analysisResult.recommended_actions?.length > 0 && Array.isArray(analysisResult.recommended_actions) && (
+                        <>
+                          <h4 className="font-mono text-xs font-bold uppercase mt-4 mb-2">Recommended Priority Actions</h4>
+                          {analysisResult.recommended_actions.map((act, i) => (
+                            <div key={i} className="border p-2 rounded mb-2 text-xs">
+                              <div className="font-bold">#{safeStr(act.priority)} — {safeStr(act.action)}</div>
+                              <div className="text-muted">Responsible: {safeStr(act.responsible)} | Deadline: {safeStr(act.deadline)}</div>
+                              {act.consequence_of_inaction && <div className="text-danger italic">If skipped: {safeStr(act.consequence_of_inaction)}</div>}
+                            </div>
+                          ))}
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
@@ -985,6 +1237,7 @@ export default function CaseAnalyzerTab({ model, language }) {
                 </div>
               </div>
             </div>
+            </ReportErrorBoundary>
           )}
         </div>
       </div>

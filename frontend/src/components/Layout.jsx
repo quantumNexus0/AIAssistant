@@ -14,7 +14,7 @@ import {
   Gavel
 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
 export default function Layout({
   children,
@@ -51,6 +51,14 @@ export default function Layout({
     }
   };
 
+  const SLOW_MODELS = ['deepseek', 'llama3.1:70b', 'llama3.3', 'mixtral', 'qwen2:72b'];
+  const isSlowModel = (m) => m && SLOW_MODELS.some(s => m.toLowerCase().includes(s));
+
+  const getModelLabel = (name) => {
+    const short = name.split(':')[0].split('/').pop();
+    return isSlowModel(name) ? `${short} ⏳` : short;
+  };
+
   const checkOllama = async () => {
     setOllamaStatus('checking');
     try {
@@ -60,8 +68,14 @@ export default function Layout({
         setOllamaStatus(data.status === 'connected' ? 'connected' : 'disconnected');
         if (data.available_models && data.available_models.length > 0) {
           setAvailableModels(data.available_models);
-          if (!data.available_models.includes(model)) {
-            setModel(data.available_models[0]);
+          // Only auto-select if the current model is completely absent from Ollama's list
+          // (don't override user's saved preference stored in localStorage)
+          const savedModel = localStorage.getItem('nyayaai_model');
+          const currentChoice = savedModel || model;
+          if (!data.available_models.includes(currentChoice)) {
+            // Prefer a fast model if available
+            const fast = data.available_models.find(m => !isSlowModel(m));
+            setModel(fast || data.available_models[0]);
           }
         }
       } else {
@@ -283,11 +297,17 @@ export default function Layout({
               onChange={e => setModel(e.target.value)}
               disabled={ollamaStatus === 'disconnected'}
               className="model-dropdown"
+              title={isSlowModel(model) ? 'This model is slow — expect long wait times. Use llama3.2 for faster results.' : 'Select AI model'}
             >
               {availableModels.map(m => (
-                <option key={m} value={m}>{getShortModelName(m)}</option>
+                <option key={m} value={m}>{getModelLabel(m)}</option>
               ))}
             </select>
+            {isSlowModel(model) && (
+              <div style={{ fontSize: '0.62rem', color: '#d97706', marginTop: '3px', fontFamily: 'var(--font-mono)', padding: '2px 4px', background: 'rgba(245,158,11,0.08)', borderRadius: '3px', border: '1px solid rgba(245,158,11,0.2)' }}>
+                ⏳ Slow model — may timeout. Switch to llama3.2 for best results.
+              </div>
+            )}
           </div>
           <div className="footer-controls" style={{ justifyContent: 'center' }}>
             {/* Footer controls preserved */}

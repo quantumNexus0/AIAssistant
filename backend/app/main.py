@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from .config import PORT
 from .database import connect_db, disconnect_db, init_db
-from .routers import ai, chats, cases, documents
+from .routers import ai, chats, cases, documents, legal_tools
 
 
 @asynccontextmanager
@@ -39,6 +39,7 @@ app.include_router(ai.router)
 app.include_router(chats.router)
 app.include_router(cases.router)
 app.include_router(documents.router)
+app.include_router(legal_tools.router)
 
 
 @app.get("/")

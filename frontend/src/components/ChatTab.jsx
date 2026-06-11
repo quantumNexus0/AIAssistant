@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Trash2, Download, Scale, ArrowRight, User, Shield, Scroll, Users, Home, HardHat, Briefcase, Cpu } from 'lucide-react';
-
-
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 const CHAT_MODES = [
   { id: 'general', name: 'General', icon: Scale },
   { id: 'criminal', name: 'Criminal', icon: Shield },
@@ -12,7 +12,7 @@ const CHAT_MODES = [
   { id: 'tax', name: 'Tax', icon: Briefcase },
   { id: 'cyber', name: 'Cyber', icon: Cpu }
 ];
- const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 // const SUGGESTED_TOPICS = [
 //   "What are my fundamental rights under the Indian Constitution?",
 //   "Explain the RTI Act and how to file a complaint",
@@ -164,7 +164,6 @@ GUIDELINES:
 4. Always recommend consulting a qualified advocate for final advice.
 5. Include relevant court and government resources (e.g., eCourts, Legal Services Authority).
 6. Reference landmark Supreme Court/High Court judgments where applicable.
-7. ALWAYS end with: "⚠️ Disclaimer: This is general legal information, not legal advice. Please consult a licensed advocate for your specific matter."
 
 Format your response with clear sections using **bold headers**, bullet points, and law references in [Section X of Act Y] format.`;
   };
@@ -352,95 +351,7 @@ Format your response with clear sections using **bold headers**, bullet points, 
     a.click();
   };
 
-  // Format legal text formatting rules
-  const formatLegalText = (text) => {
-    if (!text) return '';
-
-    const escapeHTML = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const inlineParse = (str) => {
-      return str
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/\[([^\]]+)\]/g, '<span class="law-ref">$1</span>')
-        .replace(/Article (\d+[A-Z]?)/gi, '<span class="law-ref">Article $1</span>')
-        .replace(/Section (\d+[A-Z]?)/gi, '<span class="law-ref">Section $1</span>')
-        .replace(/IPC (\d+)/gi, '<span class="law-ref">IPC $1</span>')
-        .replace(/BNS (\d+)/gi, '<span class="law-ref">BNS $1</span>');
-    };
-
-    const lines = text.split('\n');
-    let html = '';
-    let inUl = false;
-    let inOl = false;
-
-    lines.forEach(line => {
-      const trimmed = line.trim();
-
-      // Handle unordered lists
-      if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ')) {
-        if (inOl) {
-          html += '</ol>';
-          inOl = false;
-        }
-        if (!inUl) {
-          html += '<ul>';
-          inUl = true;
-        }
-        const content = trimmed.substring(2);
-        html += `<li>${inlineParse(escapeHTML(content))}</li>`;
-        return;
-      }
-
-      // Handle ordered lists
-      const olMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
-      if (olMatch) {
-        if (inUl) {
-          html += '</ul>';
-          inUl = false;
-        }
-        if (!inOl) {
-          html += '<ol>';
-          inOl = true;
-        }
-        const content = olMatch[2];
-        html += `<li>${inlineParse(escapeHTML(content))}</li>`;
-        return;
-      }
-
-      // If we reach here, we are not on a list item
-      if (inUl) {
-        html += '</ul>';
-        inUl = false;
-      }
-      if (inOl) {
-        html += '</ol>';
-        inOl = false;
-      }
-
-      if (!trimmed) {
-        return;
-      }
-
-      // Handle headings
-      if (trimmed.startsWith('### ')) {
-        html += `<h3>${inlineParse(escapeHTML(trimmed.substring(4)))}</h3>`;
-      } else if (trimmed.startsWith('## ')) {
-        html += `<h2>${inlineParse(escapeHTML(trimmed.substring(3)))}</h2>`;
-      } else if (trimmed.startsWith('# ')) {
-        html += `<h1>${inlineParse(escapeHTML(trimmed.substring(2)))}</h1>`;
-      } else {
-        // Plain paragraph
-        html += `<p>${inlineParse(escapeHTML(trimmed))}</p>`;
-      }
-    });
-
-    // Close any unclosed lists
-    if (inUl) html += '</ul>';
-    if (inOl) html += '</ol>';
-
-    return html;
-  };
-
+  // Format legal text formatting rules - removed in favor of ReactMarkdown
   return (
     <div className="chat-tab-container">
       {/* Top Header */}
@@ -493,12 +404,26 @@ Format your response with clear sections using **bold headers**, bullet points, 
                     {msg.role === 'user' ? 'You' : 'Nyaya AI'}
                   </div>
                   {msg.role === 'user' ? (
-                    <div className="msg-bubble user-bubble">
+                    <div className="msg-bubble user-bubble" style={{ whiteSpace: 'pre-wrap' }}>
                       {msg.content}
                     </div>
                   ) : (
                     <div className="msg-bubble ai-bubble">
-                      <div dangerouslySetInnerHTML={{ __html: formatLegalText(msg.content) }} />
+                      <ReactMarkdown 
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          h1: ({node, ...props}) => <h1 style={{ fontFamily: 'var(--font-serif)', marginTop: '0.75rem', marginBottom: '0.5rem', fontSize: '1.25rem', fontWeight: 'bold' }} {...props} />,
+                          h2: ({node, ...props}) => <h2 style={{ fontFamily: 'var(--font-serif)', marginTop: '0.75rem', marginBottom: '0.5rem', fontSize: '1.1rem', fontWeight: 'bold' }} {...props} />,
+                          h3: ({node, ...props}) => <h3 style={{ fontFamily: 'var(--font-serif)', marginTop: '0.5rem', marginBottom: '0.25rem', fontSize: '1rem', fontWeight: 'bold' }} {...props} />,
+                          p: ({node, ...props}) => <p style={{ marginBottom: '0.5rem' }} {...props} />,
+                          ul: ({node, ...props}) => <ul style={{ listStyleType: 'disc', paddingLeft: '1.25rem', marginBottom: '0.5rem' }} {...props} />,
+                          ol: ({node, ...props}) => <ol style={{ listStyleType: 'decimal', paddingLeft: '1.25rem', marginBottom: '0.5rem' }} {...props} />,
+                          li: ({node, ...props}) => <li style={{ marginBottom: '0.25rem' }} {...props} />,
+                          strong: ({node, ...props}) => <strong style={{ fontWeight: 700 }} {...props} />
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
                       {!isGenerating && i === messages.length - 1 && (
                         <div className="legal-disclaimer">
                           ⚠️ Disclaimer: This is general legal information based on Indian laws. It does not constitute formal legal advice. Please consult a registered advocate for your specific case.

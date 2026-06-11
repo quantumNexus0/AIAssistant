@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Search, Compass, BookOpen, Clock, HelpCircle,
   Sword, UserCheck, Landmark, Heart, Home, ShoppingBag,
@@ -6,7 +6,7 @@ import {
    CheckCircle
 } from 'lucide-react';
 
- const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
 const REFS_DATA = [
   { Icon: Sword, title: 'Bharatiya Nyaya Sanhita (BNS) 2023', desc: 'New criminal code replacing IPC 1860 from July 2024. 358 sections covering all criminal offences.', badge: 'Criminal Law' },
@@ -38,6 +38,61 @@ async function saveToolResult(toolType, title, queryParams, result) {
 
 export default function LegalToolsTab({ onLearnAboutReference, model }) {
   const [activeSubTool, setActiveSubTool] = useState('explainer');
+  const [savedTools, setSavedTools] = useState([]);
+  const [selectedSavedToolId, setSelectedSavedToolId] = useState('');
+
+  useEffect(() => {
+    fetchSavedTools();
+  }, []);
+
+  const fetchSavedTools = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/legal-tools`);
+      if (res.ok) {
+        setSavedTools(await res.json());
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSavedToolSelect = async (e) => {
+    const id = e.target.value;
+    setSelectedSavedToolId(id);
+    if (!id) return;
+    
+    try {
+      const res = await fetch(`${API_BASE}/legal-tools/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setActiveSubTool(data.tool_type === 'section_explainer' ? 'explainer' : data.tool_type === 'limitation_check' ? 'limitation' : 'precedents');
+        
+        if (data.tool_type === 'section_explainer') {
+          setExpSection(data.query_params?.section || '');
+          setExpAct(data.query_params?.act || '');
+          setExpContext(data.query_params?.context || '');
+          setExpResult(data.result);
+          setExpSaved(true);
+        } else if (data.tool_type === 'limitation_check') {
+          setLimAction(data.query_params?.action_type || '');
+          setLimDate(data.query_params?.event_date || '');
+          setLimCaseType(data.query_params?.case_type || 'civil');
+          setLimState(data.query_params?.state || '');
+          setLimResult(data.result);
+          setLimSaved(true);
+        } else if (data.tool_type === 'precedent_finder') {
+          setPrecQuery(data.query_params?.query || '');
+          setPrecCaseType(data.query_params?.case_type || '');
+          setPrecCourt(data.query_params?.court || 'Supreme Court of India');
+          setPrecResult(data.result);
+          setPrecSaved(true);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to load saved tool result.');
+    }
+  };
 
   // ── section explainer state ────────────────────────────────────────────────
   const [expSection, setExpSection] = useState('');
@@ -70,17 +125,21 @@ export default function LegalToolsTab({ onLearnAboutReference, model }) {
 
   // ── helpers ────────────────────────────────────────────────────────────────
   const parseJSON = (data) => {
+    // If already a plain object with our expected fields, return as-is
+    if (data && typeof data === 'object' && !data.response && !data.message) {
+      return data;
+    }
     if (typeof data === 'string') {
-      const cleaned = data.trim().replace(/^```json/, '').replace(/```$/, '');
-      return JSON.parse(cleaned.trim());
+      const cleaned = data.trim().replace(/^```json/, '').replace(/^```/, '').replace(/```$/, '').trim();
+      try { return JSON.parse(cleaned); } catch { return { raw_text: data }; }
     }
     if (data?.response) {
-      const c = data.response.trim().replace(/^```json/, '').replace(/```$/, '');
-      return JSON.parse(c);
+      const c = data.response.trim().replace(/^```json/, '').replace(/^```/, '').replace(/```$/, '').trim();
+      try { return JSON.parse(c); } catch { return { raw_text: data.response }; }
     }
     if (data?.message?.content) {
-      const c = data.message.content.trim().replace(/^```json/, '').replace(/```$/, '');
-      return JSON.parse(c);
+      const c = data.message.content.trim().replace(/^```json/, '').replace(/^```/, '').replace(/```$/, '').trim();
+      try { return JSON.parse(c); } catch { return { raw_text: data.message.content }; }
     }
     return data;
   };
@@ -145,6 +204,7 @@ export default function LegalToolsTab({ onLearnAboutReference, model }) {
           { section: expSection, act: expAct, context: expContext, language: expLang },
           parsed
         );
+        fetchSavedTools();
         setExpSaved(true);
       }
     } catch (err) {
@@ -175,6 +235,7 @@ export default function LegalToolsTab({ onLearnAboutReference, model }) {
           { action_type: limAction, event_date: limDate, case_type: limCaseType, state: limState },
           parsed
         );
+        fetchSavedTools();
         setLimSaved(true);
       }
     } catch (err) {
@@ -206,6 +267,7 @@ export default function LegalToolsTab({ onLearnAboutReference, model }) {
           { query: precQuery, case_type: precCaseType, court: precCourt },
           results
         );
+        fetchSavedTools();
         setPrecSaved(true);
       }
     } catch (err) {
@@ -237,6 +299,21 @@ export default function LegalToolsTab({ onLearnAboutReference, model }) {
       <div className="tab-panel-header print-hide">
         <h2>Legal utilities &amp; references</h2>
         <p>Specialized calculators, section explainers, precedent search, and act references.</p>
+
+        {/* Database archive selection */}
+        {savedTools.length > 0 && (
+          <div className="saved-cases-archive font-mono mt-3 mb-2" style={{ backgroundColor: 'var(--bg-secondary)', padding: '10px 15px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'inline-block' }}>
+            <span style={{ fontWeight: 'bold' }}>Database:</span>
+            <select value={selectedSavedToolId} onChange={handleSavedToolSelect} style={{ marginLeft: 10, padding: 4, borderRadius: 4, backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}>
+              <option value="">-- Load Saved Utility Result --</option>
+              {savedTools.map(t => (
+                <option key={t.id} value={t.id}>
+                  {t.tool_type.replace('_', ' ').toUpperCase()}: {t.title}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="sub-tools-tab-bar mt-3 font-mono">
           {[
@@ -313,16 +390,26 @@ export default function LegalToolsTab({ onLearnAboutReference, model }) {
                     <h3 className="font-serif border-bottom pb-2 mb-3 text-sm font-bold">
                       Section {expSection} of {expAct} — analysis
                     </h3>
-                    {renderReportField('Full text / key content', expResult.full_text || expResult.fullText || expResult.text)}
-                    {renderReportField('Plain language explanation', expResult.plain_language_explanation || expResult.plainExplanation || expResult.plain_language)}
-                    {renderReportField('Essential ingredients / elements', expResult.essential_ingredients || expResult.essentialIngredients || expResult.elements)}
-                    {renderReportField('Important Supreme Court interpretations', expResult.important_interpretations || expResult.interpretations || expResult.sc_interpretations)}
-                    {renderReportField('Common practical scenarios', expResult.common_scenarios || expResult.commonScenarios || expResult.scenarios)}
-                    {renderReportField('New law equivalent', expResult.new_law_equivalent || expResult.newLawEquivalent || expResult.new_law)}
-                    {Object.keys(expResult).length === 0 && (
-                      <div className="report-field">
-                        <div className="report-section-body">No structured fields returned from the model.</div>
+                    {/* Handle raw_text fallback */}
+                    {expResult.raw_text ? (
+                      <div className="raw-output-box">
+                        <p className="text-warning mb-2">⚠ The model returned plain text instead of structured JSON:</p>
+                        <pre style={{whiteSpace: 'pre-wrap', wordBreak: 'break-word'}}>{expResult.raw_text}</pre>
                       </div>
+                    ) : (
+                      <>
+                        {renderReportField('Full text / key content', expResult.full_text || expResult.fullText || expResult.text)}
+                        {renderReportField('Plain language explanation', expResult.plain_language_explanation || expResult.plainExplanation || expResult.plain_language)}
+                        {renderReportField('Essential ingredients / elements', expResult.essential_ingredients || expResult.essentialIngredients || expResult.elements)}
+                        {renderReportField('Important Supreme Court interpretations', expResult.important_interpretations || expResult.interpretations || expResult.sc_interpretations)}
+                        {renderReportField('Common practical scenarios', expResult.common_scenarios || expResult.commonScenarios || expResult.scenarios)}
+                        {renderReportField('New law equivalent', expResult.new_law_equivalent || expResult.newLawEquivalent || expResult.new_law)}
+                        {Object.keys(expResult).length === 0 && (
+                          <div className="report-field">
+                            <div className="report-section-body">No structured fields returned from the model.</div>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
@@ -390,14 +477,21 @@ export default function LegalToolsTab({ onLearnAboutReference, model }) {
                     <h3 className="font-serif border-bottom pb-2 mb-3 text-sm font-bold text-center">
                       Limitation audit report
                     </h3>
-                    {Object.entries(limResult).map(([key, val]) => (
-                      <div key={key} className="mb-2 border-bottom pb-2 flex-row-justify">
-                        <strong className="uppercase text-muted text-xs mr-2">{key.replace(/_/g, ' ')}:</strong>
-                        <span className={key === 'is_within_time' ? (val ? 'text-success font-bold' : 'text-danger font-bold') : ''}>
-                          {typeof val === 'boolean' ? (val ? 'YES' : 'NO') : String(val)}
-                        </span>
+                    {limResult.raw_text ? (
+                      <div className="raw-output-box">
+                        <p className="text-warning mb-2">⚠ Model returned plain text:</p>
+                        <pre style={{whiteSpace: 'pre-wrap', wordBreak: 'break-word'}}>{limResult.raw_text}</pre>
                       </div>
-                    ))}
+                    ) : (
+                      Object.entries(limResult).map(([key, val]) => (
+                        <div key={key} className="mb-2 border-bottom pb-2 flex-row-justify">
+                          <strong className="uppercase text-muted text-xs mr-2">{key.replace(/_/g, ' ')}:</strong>
+                          <span className={key === 'is_within_time' ? (val ? 'text-success font-bold' : 'text-danger font-bold') : ''}>
+                            {typeof val === 'boolean' ? (val ? 'YES ✓' : 'NO ✗') : String(val)}
+                          </span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 )}
               </div>

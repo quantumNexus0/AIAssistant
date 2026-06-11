@@ -686,6 +686,38 @@ async def _call_ollama(model: str, system: str, user_msg: str, temperature: floa
         raise HTTPException(504, detail={"error": "timeout", "message": "Model timed out. Try a smaller model."})
 
 
+def _extract_and_parse_json(ollama_response: dict):
+    """Extract text content from Ollama response and parse it as JSON.
+    Returns the parsed object, or the raw text as {"raw": ...} if JSON parsing fails."""
+    raw = ""
+    if isinstance(ollama_response, dict):
+        if "message" in ollama_response and "content" in ollama_response["message"]:
+            raw = ollama_response["message"]["content"]
+        elif "response" in ollama_response:
+            raw = ollama_response["response"]
+        else:
+            # Already a plain dict (e.g., from a non-Ollama source)
+            return ollama_response
+    else:
+        raw = str(ollama_response)
+
+    # Strip markdown code fences
+    cleaned = raw.strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
+
+    try:
+        return json.loads(cleaned)
+    except (json.JSONDecodeError, ValueError):
+        # Return raw text so frontend can display it
+        return {"raw_text": raw, "parse_error": "Model did not return valid JSON"}
+
+
 async def _call_ollama_stream(model: str, system: str, user_msg: str, temperature: float = 0.4):
     payload = {
         "model": model,
@@ -806,12 +838,13 @@ async def chat_stream(req: OllamaChatRequest):
 @router.post("/analyze-case")
 async def analyze_case(req: CaseAnalysisRequest):
     user_msg = build_analysis_user_message(req)
-    return await _call_ollama(
+    raw = await _call_ollama(
         model=req.model,
         system=NYAYA_MASTER_ANALYSIS_PROMPT,
         user_msg=user_msg,
         temperature=req.temperature or 0.4,
     )
+    return _extract_and_parse_json(raw)
 
 
 @router.post("/analyze-case/stream")
@@ -876,15 +909,23 @@ async def find_precedents(
     model: str = "llama3.2",
 ):
     system = (
-        "You are NyayaAI Precedent Finder. Return ONLY a JSON array of cases:\n"
+        "You are NyayaAI Precedent Finder. Return ONLY a valid JSON array of cases (no markdown, no preamble):\n"
         '[{"case_name":"...","citation":"...","court":"...","year":"...","ratio":"...","applicability":"...","favours":"client/opponent/neutral"}]'
     )
-    user_msg = f"Find precedents for: {query}"
+    user_msg = f"Find Indian legal precedents for the following legal point: {query}"
     if case_type:
         user_msg += f"\nArea of law: {case_type}"
     if court:
         user_msg += f"\nFocus court: {court}"
-    return await _call_ollama(model=model, system=system, user_msg=user_msg, temperature=0.3)
+    user_msg += "\n\nReturn only the JSON array, nothing else."
+    raw = await _call_ollama(model=model, system=system, user_msg=user_msg, temperature=0.3)
+    result = _extract_and_parse_json(raw)
+    # Ensure we always return an array
+    if isinstance(result, list):
+        return result
+    if isinstance(result, dict) and "cases" in result:
+        return result["cases"]
+    return result
 
 
 @router.post("/explain-section")
@@ -896,20 +937,16 @@ async def explain_section(
     model: str = "llama3.2",
 ):
     system = (
-        "You are NyayaAI Section Explainer. For the given Indian legal provision, provide:\n"
-        "1. Full text / key content of the section\n"
-        "2. Plain-language explanation\n"
-        "3. Essential ingredients / elements that must be proved\n"
-        "4. Important Supreme Court interpretations\n"
-        "5. Common practical scenarios\n"
-        "6. New law equivalent (BNS/BNSS/BSA) if old IPC/CrPC/Evidence Act section\n\n"
-        "Return structured JSON with these six fields."
+        "You are NyayaAI Section Explainer. For the given Indian legal provision, return ONLY valid JSON (no markdown, no preamble) with exactly these six fields:\n"
+        '{"full_text": "...", "plain_language_explanation": "...", "essential_ingredients": "...", '
+        '"important_interpretations": "...", "common_scenarios": "...", "new_law_equivalent": "..."}'
     )
     user_msg = f"Explain Section {section} of {act}."
     if context:
-        user_msg += f"\nContext: {context}"
-    user_msg += f"\nLanguage: {language}"
-    return await _call_ollama(model=model, system=system, user_msg=user_msg, temperature=0.3)
+        user_msg += f"\nContext/Scenario: {context}"
+    user_msg += f"\nRespond in {language}. Return only the JSON object."
+    raw = await _call_ollama(model=model, system=system, user_msg=user_msg, temperature=0.3)
+    return _extract_and_parse_json(raw)
 
 
 @router.post("/limitation-check")
@@ -922,16 +959,18 @@ async def limitation_check(
 ):
     system = (
         "You are NyayaAI Limitation Calculator. Given an action type and event date, "
-        "determine limitation period under Limitation Act 1963 or the specific act, "
-        "calculate the deadline, advise if time has expired, and if so, whether "
-        "condonation of delay is possible and on what grounds. "
-        "Return structured JSON with: {applicable_law, period, deadline, "
-        "time_remaining, is_within_time, condonation_possible, condonation_grounds, "
-        "relevant_article_of_limitation_act}"
+        "determine the limitation period under the Limitation Act 1963 or the specific act. "
+        "Return ONLY valid JSON (no markdown, no preamble) with these fields: "
+        '{"applicable_law": "...", "period": "...", "deadline": "DD-MM-YYYY", '
+        '"time_remaining": "...", "is_within_time": true/false, '
+        '"condonation_possible": true/false, "condonation_grounds": "...", '
+        '"relevant_article_of_limitation_act": "...", "advice": "..."}'
     )
-    user_msg = f"Action: {action_type}\nEvent/Cause of action date: {event_date}"
+    user_msg = f"Legal Action: {action_type}\nEvent/Cause of action date: {event_date}"
     if case_type:
         user_msg += f"\nCase type: {case_type}"
     if state:
-        user_msg += f"\nState: {state}"
-    return await _call_ollama(model=model, system=system, user_msg=user_msg, temperature=0.2)
+        user_msg += f"\nState/UT: {state}"
+    user_msg += "\nReturn only the JSON object."
+    raw = await _call_ollama(model=model, system=system, user_msg=user_msg, temperature=0.2)
+    return _extract_and_parse_json(raw)
