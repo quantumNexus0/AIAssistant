@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 import {
   MessageSquare,
@@ -11,7 +11,8 @@ import {
   Check,
   X,
   Layers,
-  Gavel
+  Menu,
+  Globe
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
@@ -30,9 +31,26 @@ export default function Layout({
   const [chats, setChats] = useState([]);
   const [ollamaStatus, setOllamaStatus] = useState('checking');
   const [availableModels, setAvailableModels] = useState(['llama3.2']);
-  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth <= 480 : false);
   const [editingChatId, setEditingChatId] = useState(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const sidebarRef = useRef(null);
+
+  const LANGUAGES = [
+    { value: 'english', label: 'English' },
+    { value: 'hindi', label: 'हिन्दी' },
+    { value: 'bengali', label: 'বাংলা' },
+    { value: 'telugu', label: 'తెలుగు' },
+    { value: 'marathi', label: 'मराठी' },
+    { value: 'tamil', label: 'தமிழ்' },
+    { value: 'gujarati', label: 'ગુજરાતી' },
+    { value: 'kannada', label: 'ಕನ್ನಡ' },
+    { value: 'malayalam', label: 'മലയാളം' },
+    { value: 'punjabi', label: 'ਪੰਜਾਬੀ' },
+    { value: 'urdu', label: 'اردو' },
+    { value: 'spanish', label: 'Español' },
+    { value: 'french', label: 'Français' },
+  ];
 
   const getShortModelName = (name) => {
     if (!name) return '';
@@ -68,12 +86,9 @@ export default function Layout({
         setOllamaStatus(data.status === 'connected' ? 'connected' : 'disconnected');
         if (data.available_models && data.available_models.length > 0) {
           setAvailableModels(data.available_models);
-          // Only auto-select if the current model is completely absent from Ollama's list
-          // (don't override user's saved preference stored in localStorage)
           const savedModel = localStorage.getItem('nyayaai_model');
           const currentChoice = savedModel || model;
           if (!data.available_models.includes(currentChoice)) {
-            // Prefer a fast model if available
             const fast = data.available_models.find(m => !isSlowModel(m));
             setModel(fast || data.available_models[0]);
           }
@@ -90,17 +105,27 @@ export default function Layout({
     fetchChats();
     checkOllama();
 
-    const handleResize = () => setIsMobile(window.innerWidth <= 480);
-    window.addEventListener('resize', handleResize);
-
     const handleHistoryChange = () => fetchChats();
     window.addEventListener('chat_history_changed', handleHistoryChange);
 
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('chat_history_changed', handleHistoryChange);
+    // Close mobile menu on outside click
+    const handleOutsideClick = (e) => {
+      if (
+        mobileMenuOpen &&
+        sidebarRef.current &&
+        !sidebarRef.current.contains(e.target) &&
+        !e.target.closest('.mobile-hamburger-btn')
+      ) {
+        setMobileMenuOpen(false);
+      }
     };
-  }, []);
+    document.addEventListener('mousedown', handleOutsideClick);
+
+    return () => {
+      window.removeEventListener('chat_history_changed', handleHistoryChange);
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [mobileMenuOpen]);
 
   const handleNewChat = async () => {
     try {
@@ -119,6 +144,7 @@ export default function Layout({
         setChats(prev => [newSession, ...prev]);
         setCurrentChatId(newSession.id);
         setActiveTab('chat');
+        setMobileMenuOpen(false);
       }
     } catch (err) {
       console.error("Error creating chat:", err);
@@ -171,17 +197,80 @@ export default function Layout({
   const handleChatSelect = (id) => {
     setCurrentChatId(id);
     setActiveTab('chat');
+    setMobileMenuOpen(false);
+  };
+
+  const handleNavClick = (tab) => {
+    setActiveTab(tab);
+    setMobileMenuOpen(false);
   };
 
   return (
     <div className="app-container">
+
+      {/* ═══ MOBILE TOP BAR ═══ */}
+      <header className="mobile-topbar">
+        <button
+          className="mobile-hamburger-btn"
+          onClick={() => setMobileMenuOpen(prev => !prev)}
+          aria-label="Toggle navigation menu"
+          id="hamburger-btn"
+        >
+          {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
+
+        {/* Mobile Logo */}
+        <div className="mobile-logo">
+          <div className="mobile-logo-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/>
+              <path d="M8 12L11 15L16 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M12 6V8M12 16V18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </div>
+          <span className="mobile-logo-text">Nyaya AI</span>
+        </div>
+
+        <div className="mobile-topbar-right">
+          {/* Language selector in mobile topbar */}
+          <div className="mobile-lang-selector">
+            <Globe size={14} />
+            <select
+              value={language}
+              onChange={e => setLanguage(e.target.value)}
+              aria-label="Select language"
+            >
+              {LANGUAGES.map(l => (
+                <option key={l.value} value={l.value}>{l.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </header>
+
+      {/* ═══ MOBILE OVERLAY ═══ */}
+      {mobileMenuOpen && (
+        <div
+          className="mobile-overlay"
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* ═══ SIDEBAR ═══ */}
-      <aside className="sidebar">
+      <aside
+        ref={sidebarRef}
+        className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}
+      >
 
         {/* Logo */}
         <div className="sidebar-logo">
           <div className="logo-icon">
-            <Gavel size={22} strokeWidth={1.75} />
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.75"/>
+              <path d="M8 12L11 15L16 9" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M12 5V7M12 17V19" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round"/>
+            </svg>
           </div>
           <div className="logo-text">
             <h2>Nyaya AI</h2>
@@ -202,35 +291,35 @@ export default function Layout({
           <div className="sidebar-section-title font-mono">Tools</div>
           <button
             className={`nav-item ${activeTab === 'chat' && !currentChatId ? 'active' : ''}`}
-            onClick={() => { setCurrentChatId(null); setActiveTab('chat'); }}
+            onClick={() => { setCurrentChatId(null); handleNavClick('chat'); }}
           >
             <MessageSquare size={16} />
             <span>AI Legal Chat</span>
           </button>
           <button
             className={`nav-item ${activeTab === 'rights' ? 'active' : ''}`}
-            onClick={() => setActiveTab('rights')}
+            onClick={() => handleNavClick('rights')}
           >
             <Scale size={16} />
             <span>Know Your Rights</span>
           </button>
           <button
             className={`nav-item ${activeTab === 'analyze' ? 'active' : ''}`}
-            onClick={() => setActiveTab('analyze')}
+            onClick={() => handleNavClick('analyze')}
           >
             <Search size={16} />
             <span>Case Analyzer</span>
           </button>
           <button
             className={`nav-item ${activeTab === 'docs' ? 'active' : ''}`}
-            onClick={() => setActiveTab('docs')}
+            onClick={() => handleNavClick('docs')}
           >
             <FileText size={16} />
             <span>Draft Documents</span>
           </button>
           <button
             className={`nav-item ${activeTab === 'tools' ? 'active' : ''}`}
-            onClick={() => setActiveTab('tools')}
+            onClick={() => handleNavClick('tools')}
           >
             <Layers size={16} />
             <span>Legal Utilities</span>
@@ -291,6 +380,21 @@ export default function Layout({
 
         {/* Configuration Footer */}
         <div className="sidebar-footer">
+          {/* Language Selector in Sidebar */}
+          <div className="sidebar-language-selector">
+            <Globe size={13} className="sidebar-lang-icon" />
+            <select
+              value={language}
+              onChange={e => setLanguage(e.target.value)}
+              className="sidebar-lang-select"
+              aria-label="Select response language"
+            >
+              {LANGUAGES.map(l => (
+                <option key={l.value} value={l.value}>{l.label}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="model-input-wrapper">
             <select
               value={model}

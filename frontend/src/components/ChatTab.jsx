@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Trash2, Download, Scale, ArrowRight, User, Shield, Scroll, Users, Home, HardHat, Briefcase, Cpu } from 'lucide-react';
+import { Trash2, Download, Scale, ArrowUp, User, Shield, Scroll, Users, Home, HardHat, Briefcase, Cpu, Mic, MicOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
 const CHAT_MODES = [
   { id: 'general', name: 'General', icon: Scale },
   { id: 'criminal', name: 'Criminal', icon: Shield },
@@ -12,18 +13,8 @@ const CHAT_MODES = [
   { id: 'tax', name: 'Tax', icon: Briefcase },
   { id: 'cyber', name: 'Cyber', icon: Cpu }
 ];
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
-// const SUGGESTED_TOPICS = [
-//   "What are my fundamental rights under the Indian Constitution?",
-//   "Explain the RTI Act and how to file a complaint",
-//   "What should I do if I am wrongfully arrested in India?",
-//   "Explain divorce laws in India under Hindu Marriage Act",
-//   "What is the process to file a consumer complaint in India?",
-//   "Explain cybercrime laws in India under IT Act 2000",
-//   "What are tenant rights in India?",
-//   "How to register an FIR and what are my rights?",
-//   "What are women rights and protection laws in India?"
-// ];
 
 export default function ChatTab({
   currentChatId,
@@ -48,8 +39,61 @@ export default function ChatTab({
   const [sessionTitle, setSessionTitle] = useState('New Consultation');
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
 
+  // Voice input state
+  const [isListening, setIsListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const recognitionRef = useRef(null);
+
   const chatEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
   const textareaRef = useRef(null);
+
+  // Check voice support
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setVoiceSupported(true);
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-IN';
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        setInputValue(transcript);
+        autoResizeTextarea();
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.onerror = (e) => {
+        console.error('Speech recognition error:', e.error);
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const toggleVoiceInput = () => {
+    if (!recognitionRef.current) return;
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (e) {
+        console.error('Voice recognition start error:', e);
+      }
+    }
+  };
 
   // Load chat messages when currentChatId changes
   useEffect(() => {
@@ -69,9 +113,11 @@ export default function ChatTab({
     }
   }, [prepopulatedPrompt]);
 
-  // Scroll to bottom on new message
+  // Auto-scroll to bottom on new message
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, isGenerating]);
 
   // Fetch Ollama health & models for compact selector
@@ -135,7 +181,8 @@ export default function ChatTab({
     const langNames = {
       english: 'English', hindi: 'हिन्दी', bengali: 'বাংলা', telugu: 'తెలుగు',
       marathi: 'मराठी', tamil: 'தமிழ்', gujarati: 'ગુજરાતી', kannada: 'ಕನ್ನಡ',
-      malayalam: 'മലയാളം', punjabi: 'ਪੰਜਾਬੀ', urdu: 'اردو'
+      malayalam: 'മലയാളം', punjabi: 'ਪੰਜਾਬੀ', urdu: 'اردو',
+      spanish: 'Spanish', french: 'French'
     };
 
     const langInstr = lang !== 'english'
@@ -172,6 +219,12 @@ Format your response with clear sections using **bold headers**, bullet points, 
     const text = (customText || inputValue).trim();
     if (!text || isGenerating) return;
 
+    // Stop listening if active
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+
     setInputValue('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
@@ -195,7 +248,6 @@ Format your response with clear sections using **bold headers**, bullet points, 
           const newSession = await res.json();
           chatId = newSession.id;
           setCurrentChatId(chatId);
-          // Refresh parent list (using a trigger if Layout handles it, since layout checks periodically or we can let history reload on render)
         } else {
           alert("Could not initialize chat session. Check backend status.");
           return;
@@ -285,7 +337,6 @@ Format your response with clear sections using **bold headers**, bullet points, 
               return updated;
             });
           } catch (e) {
-            // Chunk might be incomplete, let's treat it as raw text if JSON parse fails
             if (line.includes('"content"')) {
               console.warn("Could not parse NDJSON line:", line);
             }
@@ -303,7 +354,6 @@ Format your response with clear sections using **bold headers**, bullet points, 
         })
       });
 
-      // Notify parent to fetch new titles / reload history (we can force a custom event or let it poll)
       window.dispatchEvent(new Event('chat_history_changed'));
 
     } catch (err) {
@@ -329,7 +379,6 @@ Format your response with clear sections using **bold headers**, bullet points, 
     }
     if (!confirm("Are you sure you want to clear this conversation?")) return;
 
-    // We can delete and create a new chat, or just delete session
     try {
       await fetch(`${API_BASE}/chats/${currentChatId}`, { method: 'DELETE' });
       setCurrentChatId(null);
@@ -351,7 +400,8 @@ Format your response with clear sections using **bold headers**, bullet points, 
     a.click();
   };
 
-  // Format legal text formatting rules - removed in favor of ReactMarkdown
+  const currentModeName = CHAT_MODES.find(m => m.id === chatMode)?.name || 'General';
+
   return (
     <div className="chat-tab-container">
       {/* Top Header */}
@@ -387,7 +437,7 @@ Format your response with clear sections using **bold headers**, bullet points, 
       </div>
 
       {/* Messages Scroll Area */}
-      <div className="chat-messages-container">
+      <div className="chat-messages-container" ref={chatContainerRef}>
         {messages.length === 0 ? (
           <div className="chat-empty-state">
             {/* Clean empty chat box state */}
@@ -409,7 +459,7 @@ Format your response with clear sections using **bold headers**, bullet points, 
                     </div>
                   ) : (
                     <div className="msg-bubble ai-bubble">
-                      <ReactMarkdown 
+                      <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
                           h1: ({node, ...props}) => <h1 style={{ fontFamily: 'var(--font-serif)', marginTop: '0.75rem', marginBottom: '0.5rem', fontSize: '1.25rem', fontWeight: 'bold' }} {...props} />,
@@ -456,7 +506,7 @@ Format your response with clear sections using **bold headers**, bullet points, 
 
       {/* Input Area */}
       <div className="chat-input-container">
-        {/* Input box */}
+        {/* Modern Input Box */}
         <div className="chat-input-box">
           {/* Category Trigger & Dropdown Menu */}
           <div className="category-menu-wrapper">
@@ -465,6 +515,7 @@ Format your response with clear sections using **bold headers**, bullet points, 
               onClick={() => setShowCategoryMenu(!showCategoryMenu)}
               type="button"
               title="Select Law Category"
+              aria-label="Select law category"
             >
               +
             </button>
@@ -494,39 +545,49 @@ Format your response with clear sections using **bold headers**, bullet points, 
             value={inputValue}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            placeholder={`Describe your legal issue (${CHAT_MODES.find(m => m.id === chatMode)?.name || 'General'})... (Press Enter to send, Shift+Enter for new line)`}
+            placeholder={`Describe your legal issue (${currentModeName})... (Enter to send, Shift+Enter for new line)`}
             disabled={isGenerating}
+            aria-label="Chat input"
           />
+
+          {/* Voice Input Button */}
+          {voiceSupported && (
+            <button
+              className={`voice-input-btn ${isListening ? 'listening' : ''}`}
+              onClick={toggleVoiceInput}
+              type="button"
+              title={isListening ? 'Stop listening' : 'Voice input'}
+              aria-label={isListening ? 'Stop recording' : 'Start voice input'}
+            >
+              {isListening ? (
+                <>
+                  <MicOff size={15} />
+                  <span className="voice-ripple"></span>
+                </>
+              ) : (
+                <Mic size={15} />
+              )}
+            </button>
+          )}
 
           <button
             className="send-message-btn"
             onClick={() => handleSend()}
             disabled={!inputValue.trim() || isGenerating}
+            aria-label="Send message"
           >
-            <ArrowRight size={16} />
+            <ArrowUp size={16} />
           </button>
         </div>
 
         <div className="input-bottom-bar">
-          <label htmlFor="language-select" className="input-language-label">Language: </label>
-          <select
-            id="language-select"
-            value={language}
-            onChange={e => setLanguage(e.target.value)}
-            className="input-language-selector-outside"
-          >
-            <option value="english">English</option>
-            <option value="hindi">हिन्दी (Hindi)</option>
-            <option value="bengali">বাংলা (Bengali)</option>
-            <option value="telugu">తెలుగు (Telugu)</option>
-            <option value="marathi">मराठी (Marathi)</option>
-            <option value="tamil">தமிழ் (Tamil)</option>
-            <option value="gujarati">ગુજરાતી (Gujarati)</option>
-            <option value="kannada">ಕನ್ನಡ (Kannada)</option>
-            <option value="malayalam">മലയാളം (Malayalam)</option>
-            <option value="punjabi">ਪੰਜਾਬੀ (Punjabi)</option>
-            <option value="urdu">اردو (Urdu)</option>
-          </select>
+          <span className="chat-mode-badge">{currentModeName}</span>
+          {isListening && (
+            <span className="listening-indicator">
+              <span className="listen-dot"></span>
+              Listening...
+            </span>
+          )}
         </div>
       </div>
     </div>
