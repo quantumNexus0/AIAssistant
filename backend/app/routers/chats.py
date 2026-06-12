@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
+import fitz  # PyMuPDF
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 from bson import ObjectId
 from ..database import get_db
+from ..rag import process_and_store_document, delete_document_from_session, delete_session_documents
 
 router = APIRouter(prefix="/api/v1/chats", tags=["Chats History"])
 
@@ -58,6 +60,7 @@ async def create_chat(payload: ChatSessionCreate):
         "language": payload.language,
         "mode": payload.mode,
         "messages": [],
+        "documents": [],
         "created_at": datetime.utcnow().isoformat(),
         "updated_at": datetime.utcnow().isoformat()
     }
@@ -132,4 +135,70 @@ async def delete_chat(session_id: str):
     
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Chat session not found")
+        
+    delete_session_documents(session_id)
     return {"status": "success", "message": "Chat session deleted"}
+
+@router.post("/{session_id}/documents")
+async def upload_document(session_id: str, file: UploadFile = File(...)):
+    db = get_db()
+    
+    try:
+        content = await file.read()
+        text = ""
+        if file.filename.lower().endswith(".pdf"):
+            doc = fitz.open(stream=content, filetype="pdf")
+            for page in doc:
+                text += page.get_text()
+            doc.close()
+        else:
+            text = content.decode("utf-8", errors="ignore")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse document: {str(e)}")
+
+    doc_entry = {
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "text": text,
+        "uploaded_at": datetime.utcnow().isoformat()
+    }
+
+    try:
+        result = await db.chats.update_one(
+            {"_id": ObjectId(session_id)},
+            {
+                "$push": {"documents": doc_entry},
+                "$set": {"updated_at": datetime.utcnow().isoformat()}
+            }
+        )
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+        
+    # Process and store in ChromaDB for RAG
+    if text:
+        await process_and_store_document(session_id, file.filename, text)
+        
+    return {"status": "success", "filename": file.filename, "text": text}
+
+@router.delete("/{session_id}/documents/{filename}")
+async def delete_document(session_id: str, filename: str):
+    db = get_db()
+    try:
+        result = await db.chats.update_one(
+            {"_id": ObjectId(session_id)},
+            {
+                "$pull": {"documents": {"filename": filename}},
+                "$set": {"updated_at": datetime.utcnow().isoformat()}
+            }
+        )
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+        
+    delete_document_from_session(session_id, filename)
+    return {"status": "success", "message": "Document removed"}

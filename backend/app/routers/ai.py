@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 from ..config import OLLAMA_HOST_URL, OLLAMA_TIMEOUT
+from ..rag import retrieve_relevant_chunks
 
 router = APIRouter(prefix="/api/v1/ai", tags=["AI - NyayaAI Ollama"])
 
@@ -33,6 +34,7 @@ class OllamaChatRequest(BaseModel):
     stream: bool = False
     temperature: Optional[float] = 0.7
     system_prompt: Optional[str] = None
+    session_id: Optional[str] = None
 
 class OllamaGenerateRequest(BaseModel):
     model: str = "llama3.2"
@@ -794,6 +796,19 @@ async def list_models():
 @router.post("/chat")
 async def chat(req: OllamaChatRequest):
     messages = [m.model_dump() for m in req.messages]
+    
+    # RAG Injection
+    if req.session_id and len(req.messages) > 0:
+        last_user_msg = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
+        if last_user_msg:
+            chunks = await retrieve_relevant_chunks(req.session_id, last_user_msg)
+            if chunks:
+                context = "\n\n=== RELEVANT DOCUMENT CONTEXT ===\n" + "\n".join(chunks) + "\n=== END CONTEXT ===\nPlease use the above context to answer the user query if relevant."
+                if req.system_prompt:
+                    req.system_prompt += context
+                else:
+                    req.system_prompt = context
+                    
     if req.system_prompt:
         messages.insert(0, {"role": "system", "content": req.system_prompt})
     payload = {
@@ -816,6 +831,19 @@ async def chat(req: OllamaChatRequest):
 @router.post("/chat/stream")
 async def chat_stream(req: OllamaChatRequest):
     messages = [m.model_dump() for m in req.messages]
+    
+    # RAG Injection
+    if req.session_id and len(req.messages) > 0:
+        last_user_msg = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
+        if last_user_msg:
+            chunks = await retrieve_relevant_chunks(req.session_id, last_user_msg)
+            if chunks:
+                context = "\n\n=== RELEVANT DOCUMENT CONTEXT ===\n" + "\n".join(chunks) + "\n=== END CONTEXT ===\nPlease use the above context to answer the user query if relevant."
+                if req.system_prompt:
+                    req.system_prompt += context
+                else:
+                    req.system_prompt = context
+                    
     if req.system_prompt:
         messages.insert(0, {"role": "system", "content": req.system_prompt})
     payload = {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Trash2, Download, Scale, ArrowUp, User, Shield, Scroll, Users, Home, HardHat, Briefcase, Cpu, Mic, MicOff } from 'lucide-react';
+import { Trash2, Download, Scale, ArrowUp, User, Shield, Scroll, Users, Home, HardHat, Briefcase, Cpu, Mic, MicOff, Paperclip, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -43,6 +43,11 @@ export default function ChatTab({
   const [isListening, setIsListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const recognitionRef = useRef(null);
+
+  // Document upload state
+  const [attachedDocuments, setAttachedDocuments] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   const chatEndRef = useRef(null);
   const chatContainerRef = useRef(null);
@@ -102,6 +107,7 @@ export default function ChatTab({
     } else {
       setMessages([]);
       setSessionTitle('New Consultation');
+      setAttachedDocuments([]);
     }
   }, [currentChatId]);
 
@@ -151,9 +157,85 @@ export default function ChatTab({
         const data = await res.json();
         setMessages(data.messages || []);
         setSessionTitle(data.title || 'Consultation');
+        setAttachedDocuments(data.documents || []);
       }
     } catch (err) {
       console.error("Error loading chat history:", err);
+    }
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    let chatId = currentChatId;
+
+    // Auto-create chat if none exists
+    if (!chatId) {
+      try {
+        const titleText = `Document Analysis - ${file.name}`;
+        const res = await fetch(`${API_BASE}/chats`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: titleText.slice(0, 40),
+            model,
+            language,
+            mode: chatMode
+          })
+        });
+        if (res.ok) {
+          const newSession = await res.json();
+          chatId = newSession.id;
+          setCurrentChatId(chatId);
+        } else {
+          alert("Failed to start chat session for upload.");
+          setIsUploading(false);
+          return;
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Backend server not reachable.");
+        setIsUploading(false);
+        return;
+      }
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch(`${API_BASE}/chats/${chatId}/documents`, {
+        method: 'POST',
+        body: formData
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAttachedDocuments(prev => [...prev, { filename: data.filename, text: data.text }]);
+      } else {
+        alert("Document upload failed. Make sure the backend has PyMuPDF installed.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Upload failed.");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveDocument = async (filename) => {
+    if (!currentChatId) return;
+    try {
+      const res = await fetch(`${API_BASE}/chats/${currentChatId}/documents/${filename}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        setAttachedDocuments(prev => prev.filter(d => d.filename !== filename));
+      }
+    } catch (err) {
+      console.error("Failed to remove document", err);
     }
   };
 
@@ -200,7 +282,7 @@ export default function ChatTab({
       cyber: 'You specialize in Indian cyber law: IT Act 2000, IT Amendment Act 2008, DPDP Act 2023, cybercrime under IPC/BNS.'
     };
 
-    return `You are Nyaya AI, an advanced AI legal assistant specializing in Indian law. ${modeContexts[mode] || modeContexts.general}
+    let prompt = `You are Nyaya AI, an advanced AI legal assistant specializing in Indian law. ${modeContexts[mode] || modeContexts.general}
 
 ${langInstr}
 
@@ -213,6 +295,16 @@ GUIDELINES:
 6. Reference landmark Supreme Court/High Court judgments where applicable.
 
 Format your response with clear sections using **bold headers**, bullet points, and law references in [Section X of Act Y] format.`;
+
+    if (attachedDocuments && attachedDocuments.length > 0) {
+      prompt += `\n\n=== ATTACHED DOCUMENTS LIST ===\n`;
+      attachedDocuments.forEach((doc, idx) => {
+        prompt += `\nDocument ${idx + 1}: ${doc.filename}\n`;
+      });
+      prompt += `\n=== END OF ATTACHED DOCUMENTS LIST ===\n\nPlease answer the user's queries utilizing the provided document context when relevant.`;
+    }
+
+    return prompt;
   };
 
   const handleSend = async (customText = '') => {
@@ -295,7 +387,8 @@ Format your response with clear sections using **bold headers**, bullet points, 
           model,
           messages: messagesForModel,
           temperature: 0.7,
-          system_prompt: systemPrompt
+          system_prompt: systemPrompt,
+          session_id: chatId
         })
       });
 
@@ -506,6 +599,21 @@ Format your response with clear sections using **bold headers**, bullet points, 
 
       {/* Input Area */}
       <div className="chat-input-container">
+        {/* Document Badges */}
+        {attachedDocuments.length > 0 && (
+          <div className="attached-documents-row">
+            {attachedDocuments.map((doc, idx) => (
+              <div key={idx} className="document-badge">
+                <Paperclip size={12} style={{ marginRight: '4px' }} />
+                <span>{doc.filename}</span>
+                <button type="button" className="remove-doc-btn" onClick={() => handleRemoveDocument(doc.filename)} title="Remove document">
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Modern Input Box */}
         <div className="chat-input-box">
           {/* Category Trigger & Dropdown Menu */}
@@ -537,6 +645,24 @@ Format your response with clear sections using **bold headers**, bullet points, 
                 ))}
               </div>
             )}
+            {/* Attachment Button */}
+            <button
+              className="attachment-btn"
+              onClick={() => fileInputRef.current?.click()}
+              type="button"
+              title="Attach Document (PDF, TXT)"
+              aria-label="Attach document"
+              disabled={isUploading}
+            >
+              <Paperclip size={18} className={isUploading ? "spinning" : ""} />
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              style={{ display: 'none' }}
+              accept=".pdf,.txt,.docx"
+              onChange={handleFileUpload}
+            />
           </div>
 
           <textarea
