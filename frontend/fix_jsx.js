@@ -31,7 +31,7 @@ const toReplace = [
     '{pr.ratio_decidendi}', '{pr.applicability_to_case}', '{act.priority}', '{act.action}',
     '{act.responsible}', '{act.deadline}', '{act.consequence_of_inaction}',
     '{analysisResult.executive_summary?.case_overview}',
-    '{analysisResult.executive_summary?.client_position_strength || \\'mixed\\'}',
+    '{analysisResult.executive_summary?.client_position_strength || "mixed"}',
     '{analysisResult.executive_summary?.bottom_line}',
     '{analysisResult.legal_strategy?.primary_strategy?.approach}',
     '{analysisResult.legal_strategy?.primary_strategy?.probability_of_success}',
