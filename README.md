@@ -52,6 +52,8 @@ Unlike generic chatbots, Nyaya AI understands **Indian legal context** — CPC, 
 | 💬 **AI Legal Chat** | Context-aware Q&A on Indian law, procedure, and rights |
 | 🔬 **Case Analyzer** | Structured assessment of facts, jurisdiction, evidence, witnesses, and reliefs |
 | 📄 **Document Drafter** | Generates plaints, notices, applications, affidavits in court-ready format |
+| 🛠 **Legal Tools** | Specialized calculators, section explainers, document analysis, and precedent search |
+| ⚖️ **Know Your Rights** | Interactive guide to understanding fundamental legal rights and provisions |
 | 📎 **File Attachments** | Upload evidence files and supporting documents alongside case data |
 | 💾 **Persistent Storage** | All analyses and drafted documents saved in MongoDB |
 | ⬇️ **Draft Download** | Download generated legal drafts directly from the UI |
@@ -69,7 +71,8 @@ graph TB
         UI1[AI Legal Chat Tab]
         UI2[Case Analyzer Tab]
         UI3[Document Drafter Tab]
-        UI4[Saved Drafts & History]
+        UI4[Legal Tools & Document Analysis]
+        UI5[Know Your Rights Tab]
     end
 
     subgraph BACKEND["⚙️ Backend — FastAPI (Python)"]
@@ -262,10 +265,12 @@ AIAssistant/
 │   │   ├── App.jsx                 # Root component, tab-based routing
 │   │   ├── App.css                 # Global styles
 │   │   └── components/
-│   │       ├── ChatAssistant.jsx   # AI Legal Chat UI
-│   │       ├── CaseAnalyzer.jsx    # Case facts form + analysis display
-│   │       ├── DocumentDrafter.jsx # Document drafting form + download
-│   │       └── SavedDrafts.jsx     # History browser for past drafts
+│   │       ├── ChatTab.jsx             # AI Legal Chat UI
+│   │       ├── CaseAnalyzerTab.jsx     # Case facts form + analysis display
+│   │       ├── DocumentDrafterTab.jsx  # Document drafting form + download
+│   │       ├── LegalToolsTab.jsx       # Section explainer, limitation calc, precedents
+│   │       ├── RightsTab.jsx           # Interactive legal rights guide
+│   │       └── Layout.jsx              # Main application layout and navigation
 │   ├── index.html
 │   ├── vite.config.js
 │   └── package.json
